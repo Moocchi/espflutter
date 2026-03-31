@@ -1,0 +1,47 @@
+name: ganci
+description: "image2cpp Flutter App - Convert images/GIFs to Arduino byte arrays"
+publish_to: "none"
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # Image decoding + GIF frame extraction
+  image: ^4.2.0
+
+  # File picker (Android, iOS, etc)
+  file_picker: ^8.1.2
+
+  # Access Downloads / Documents directories
+  path_provider: ^2.1.4
+
+  # Archive (not used currently, kept for future zip support)
+  # archive: ^3.6.1
+
+  # State management
+  provider: ^6.1.2
+
+  # Share files from Android
+  share_plus: ^10.1.4
+  image_cropper: ^11.0.0
+
+  # ESP bridge module dependencies (imported from esp_test)
+  flutter_blue_plus: ^1.36.8
+  permission_handler: ^11.4.0
+  http: ^1.2.0
+  shared_preferences: ^2.3.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
