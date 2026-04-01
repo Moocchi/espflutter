@@ -137,27 +137,28 @@ class EspApTransferService {
     if (files.isEmpty) return;
 
     final normalizedDir = _normalizeTargetDirectory(targetDirectory);
+    final request = http.MultipartRequest('POST', _uri(baseUrl, '/upload'));
 
-    for (final file in files) {
+    for (int i = 0; i < files.length; i++) {
+      final file = files[i];
       final bytes = await _readBytes(file);
       if (bytes == null || bytes.isEmpty) {
         throw Exception('Cannot read file: ${file.name}');
       }
 
       final remotePath = _buildRemotePath(normalizedDir, file.name);
-      final request = http.MultipartRequest('POST', _uri(baseUrl, '/upload'));
       request.files.add(
         http.MultipartFile.fromBytes(
-          'file',
+          'file$i',
           bytes,
           filename: remotePath,
         ),
       );
+    }
 
-      final streamed = await request.send();
-      if (streamed.statusCode != 200) {
-        throw Exception('Upload failed (${streamed.statusCode}) for ${file.name}');
-      }
+    final streamed = await request.send();
+    if (streamed.statusCode != 200) {
+      throw Exception('Bulk upload failed (${streamed.statusCode})');
     }
   }
 

@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -35,8 +35,8 @@ class AppState extends ChangeNotifier {
 
     final result = await FilePicker.platform.pickFiles(
       allowMultiple: true,
-      // Keep using file_picker and prefer media source so Android tends to open Recent.
-      type: FileType.media,
+      type: FileType.custom,
+      allowedExtensions: const ['jpg', 'jpeg', 'png', 'bmp', 'gif'],
       withData: true,
     );
     if (result == null) return;

@@ -5,6 +5,7 @@ class AppToast {
   static OverlayEntry? _current;
   static Timer? _autoTimer;
   static GlobalKey<_ToastWidgetState>? _activeKey;
+  static String? _lastMessage;
 
   static void show(
     BuildContext context,
@@ -12,6 +13,20 @@ class AppToast {
     bool isError = false,
   }) {
     if (!context.mounted) return;
+
+    if (_current != null && _activeKey?.currentState != null && !(_activeKey!.currentState!._dismissed)) {
+      if (_lastMessage == message) {
+        _autoTimer?.cancel();
+        _autoTimer = Timer(
+          Duration(milliseconds: isError ? 2400 : 2200),
+          () {
+            _activeKey?.currentState?.fadeOut();
+          },
+        );
+        return;
+      }
+    }
+    _lastMessage = message;
 
     // Always cancel pending auto-dismiss
     _autoTimer?.cancel();

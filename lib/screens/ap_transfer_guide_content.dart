@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/esp_ap_transfer_service.dart';
 import '../widgets/app_toast.dart';
@@ -146,32 +147,291 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
     }
   }
 
-  Future<void> _refreshAll() async {
+  Future<void> _refreshAll({bool showToast = true}) async {
     final statusOk = await _refreshStatus(showToast: false);
     final listOk = await _refreshList(showToast: false);
     if (statusOk && listOk) {
       if (mounted) setState(() => _isConnected = true);
-      _toast('Terhubung ($_lastConnectedBase)');
+      if (showToast) _toast('Terhubung ($_lastConnectedBase)');
     } else {
       if (mounted) setState(() => _isConnected = false);
-      _toast('Gagal koneksi ESP32', isError: true);
+      if (showToast) _toast('Gagal koneksi ESP32', isError: true);
     }
   }
 
   Future<void> _pickFiles() async {
-    final result = await FilePicker.platform.pickFiles(
-      allowMultiple: true,
-      withData: true,
-      type: FileType.custom,
-      allowedExtensions: const ['bin', 'qoi', 'gif'],
-      initialDirectory: _preferredInitialDirectory,
-    );
-    if (result == null || result.files.isEmpty) return;
+    List<PlatformFile>? pickedFiles;
+
+    if (!kIsWeb && Platform.isAndroid) {
+      final granted = await _ensureAndroidFileAccessPermission();
+      if (!granted) {
+        _toast('Izin akses file dibutuhkan', isError: true);
+        return;
+      }
+      pickedFiles = await _pickFilesCustomAndroid();
+    } else {
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        withData: true,
+        type: FileType.custom,
+        allowedExtensions: const ['bin', 'qoi'],
+        initialDirectory: _preferredInitialDirectory,
+      );
+      pickedFiles = result?.files;
+    }
+
+    if (pickedFiles == null || pickedFiles.isEmpty) return;
+    
     setState(() {
-      _selectedFiles = result.files;
+      _selectedFiles = pickedFiles!;
       _selectedFromFolder = false;
       _selectedFolderName = null;
     });
+  }
+
+  Future<List<PlatformFile>?> _pickFilesCustomAndroid() async {
+    final root = Directory('/storage/emulated/0');
+    final fallback = _preferredInitialDirectory ?? root.path;
+    Directory currentDir = Directory(fallback);
+    if (!await currentDir.exists()) {
+      currentDir = root;
+    }
+
+    if (!mounted) return null;
+
+    Set<String> selectedPaths = {};
+
+    return showDialog<List<PlatformFile>>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            List<FileSystemEntity> entities = [];
+            try {
+              entities = currentDir
+                  .listSync(followLinks: false)
+                  .where((e) {
+                    if (e is Directory) return true;
+                    if (e is File) {
+                      final path = e.path.toLowerCase();
+                      if (path.endsWith('.qoi') || path.endsWith('.bin')) return true;
+                    }
+                    return false;
+                  })
+                  .toList()
+                ..sort((a, b) {
+                  if (a is Directory && b is File) return -1;
+                  if (a is File && b is Directory) return 1;
+                  return a.path.toLowerCase().compareTo(b.path.toLowerCase());
+                });
+            } catch (_) {
+              entities = [];
+            }
+
+            final canGoUp = currentDir.path != root.path;
+
+            return Theme(
+              data: ThemeData.light().copyWith(
+                colorScheme: const ColorScheme.light(primary: Color(0xFF6252E7)),
+                checkboxTheme: CheckboxThemeData(
+                  fillColor: WidgetStateProperty.resolveWith((states) {
+                    if (states.contains(WidgetState.selected)) return const Color(0xFF6252E7);
+                    return Colors.transparent;
+                  }),
+                ),
+              ),
+              child: AlertDialog(
+                backgroundColor: Colors.white,
+                surfaceTintColor: Colors.transparent,
+                title: const Text('Pilih File/Folder (.qoi/.bin)', style: TextStyle(color: Color(0xFF3F4670), fontSize: 18, fontWeight: FontWeight.bold)),
+                content: SizedBox(
+                width: 460,
+                height: 420,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF7F5FF),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFC9C3FF)),
+                      ),
+                      child: Text(
+                        currentDir.path,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF4C42CF),
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: canGoUp
+                              ? () {
+                                  final parent = currentDir.parent;
+                                  setDialogState(() => currentDir = parent);
+                                }
+                              : null,
+                          icon: const Icon(Icons.arrow_upward_rounded),
+                          label: const Text('Naik'),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            setDialogState(() => currentDir = Directory(root.path));
+                          },
+                          icon: const Icon(Icons.home_rounded),
+                          label: const Text('Root'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: entities.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'Kosong atau tidak ada file QOI/BIN.',
+                                style: TextStyle(color: Color(0xFF5F6680)),
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: entities.length,
+                              itemBuilder: (context, index) {
+                                final entity = entities[index];
+                                final name = entity.path.split('/').last;
+                                final isDir = entity is Directory;
+                                
+                                if (isDir) {
+                                  final isSelected = selectedPaths.contains(entity.path);
+                                  final folderSize = _getFolderSizeSync(entity as Directory);
+                                  final folderSizeStr = _formatBytes(folderSize);
+                                  return ListTile(
+                                    dense: true,
+                                    leading: const Icon(Icons.folder_rounded, color: Color(0xFF6252E7)),
+                                    title: Text(name),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(folderSizeStr, style: const TextStyle(color: Color(0xFF5F6680), fontSize: 12)),
+                                        const SizedBox(width: 8),
+                                        Checkbox(
+                                          value: isSelected,
+                                          onChanged: (val) {
+                                            setDialogState(() {
+                                              if (val == true) {
+                                                selectedPaths.add(entity.path);
+                                              } else {
+                                                selectedPaths.remove(entity.path);
+                                              }
+                                            });
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                    onTap: () {
+                                      setDialogState(() => currentDir = entity as Directory);
+                                    },
+                                  );
+                                } else {
+                                  final isSelected = selectedPaths.contains(entity.path);
+                                  final sizeStr = _formatBytes((entity as File).lengthSync());
+                                  return ListTile(
+                                    dense: true,
+                                    leading: const Icon(Icons.insert_drive_file_rounded, color: Color(0xFF5F6680)),
+                                    title: Text(name),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(sizeStr, style: const TextStyle(color: Color(0xFF5F6680), fontSize: 12)),
+                                        const SizedBox(width: 8),
+                                        Checkbox(
+                                          value: isSelected,
+                                          onChanged: (val) {
+                                            setDialogState(() {
+                                              if (val == true) {
+                                                selectedPaths.add(entity.path);
+                                              } else {
+                                                selectedPaths.remove(entity.path);
+                                              }
+                                            });
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                    onTap: () {
+                                      setDialogState(() {
+                                        if (!isSelected) {
+                                          selectedPaths.add(entity.path);
+                                        } else {
+                                          selectedPaths.remove(entity.path);
+                                        }
+                                      });
+                                    },
+                                  );
+                                }
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Batal'),
+                ),
+                FilledButton(
+                  onPressed: selectedPaths.isEmpty 
+                    ? null 
+                    : () async {
+                        List<PlatformFile> result = [];
+                        for (String path in selectedPaths) {
+                          if (FileSystemEntity.isDirectorySync(path)) {
+                             final dir = Directory(path);
+                             final folderName = dir.path.split('/').last;
+                             try {
+                               final files = dir.listSync();
+                               for (final f in files) {
+                                 if (f is File) {
+                                   final fName = f.path.split('/').last;
+                                   final ext = fName.split('.').last.toLowerCase();
+                                   if (ext == 'qoi' || ext == 'bin') {
+                                     result.add(PlatformFile(
+                                       name: '$folderName/$fName',
+                                       size: f.lengthSync(),
+                                       path: f.path,
+                                     ));
+                                   }
+                                 }
+                               }
+                             } catch (_) {}
+                          } else if (FileSystemEntity.isFileSync(path)) {
+                             final f = File(path);
+                             final fName = f.path.split('/').last;
+                             result.add(PlatformFile(
+                               name: fName,
+                               size: f.lengthSync(),
+                               path: f.path,
+                             ));
+                          }
+                        }
+                        Navigator.of(dialogContext).pop(result);
+                      },
+                  child: Text('Pilih (${selectedPaths.length})'),
+                ),
+              ],
+            ));
+          },
+        );
+      },
+    );
   }
 
   Future<void> _pickFolderFiles() async {
@@ -183,7 +443,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
     if (!mounted) return;
 
     if (files.isEmpty) {
-      _toast('Folder tidak berisi .qoi/.gif/.bin', isError: true);
+      _toast('Folder tidak berisi .qoi/.bin', isError: true);
       return;
     }
 
@@ -211,7 +471,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
 
     return FilePicker.platform.getDirectoryPath(
       initialDirectory: _preferredInitialDirectory,
-      dialogTitle: 'Pilih folder berisi .qoi/.gif/.bin',
+      dialogTitle: 'Pilih folder berisi .qoi/.bin',
     );
   }
 
@@ -222,14 +482,6 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
     final manageRequest = await Permission.manageExternalStorage.request();
     if (manageRequest.isGranted) return true;
 
-    if (manageRequest.isPermanentlyDenied || manageRequest.isRestricted) {
-      if (mounted) {
-        _toast('Izin file ditolak. Buka pengaturan aplikasi');
-      }
-      await openAppSettings();
-      return false;
-    }
-
     final storageStatus = await Permission.storage.status;
     if (storageStatus.isGranted) return true;
 
@@ -237,9 +489,31 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
     if (storageRequest.isGranted) return true;
 
     if (mounted) {
-      _toast('Akses file belum diizinkan, arahkan ke pengaturan');
+      final bool? openSettings = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Perlu Akses File'),
+          content: const Text(
+            'Aplikasi membutuhkan izin untuk membaca dan mengupload media (.qoi/.bin) dari penyimpanan Anda.\n\n'
+            'Silakan izinkan akses file di pengaturan aplikasi (Perizinan -> File dan media).',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Tutup'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Buka Settings'),
+            ),
+          ],
+        ),
+      );
+
+      if (openSettings == true) {
+        await openAppSettings();
+      }
     }
-    await openAppSettings();
     return false;
   }
 
@@ -375,7 +649,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
     final directory = Directory(folderPath);
     if (!await directory.exists()) return const [];
 
-    const allowedExt = {'qoi', 'gif', 'bin'};
+    const allowedExt = {'qoi', 'bin'};
     final List<PlatformFile> selected = [];
 
     await for (final entity in directory.list(recursive: false, followLinks: false)) {
@@ -407,6 +681,18 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
       return;
     }
 
+    if (_status != null) {
+      int totalBytes = 0;
+      for (final f in _selectedFiles) {
+        totalBytes += f.size;
+      }
+      double totalMb = totalBytes / (1024 * 1024);
+      if (totalMb > _status!.fsFreeMb) {
+        _toast('Gagal: Butuh ${totalMb.toStringAsFixed(1)}MB, sisa memori ESP32 hanya ${_status!.fsFreeMb.toStringAsFixed(1)}MB', isError: true);
+        return;
+      }
+    }
+
     setState(() => _uploading = true);
     final effectiveTargetDir = _buildEffectiveTargetDirectory();
     try {
@@ -422,7 +708,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
         _selectedFromFolder = false;
         _selectedFolderName = null;
       });
-      await _refreshAll();
+      await _refreshAll(showToast: false);
     } catch (e) {
       try {
         await _withBaseFallback((base) => _service.uploadFiles(
@@ -437,7 +723,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
           _selectedFromFolder = false;
           _selectedFolderName = null;
         });
-        await _refreshAll();
+        await _refreshAll(showToast: false);
       } catch (fallbackError) {
         _toast('Upload gagal', isError: true);
       }
@@ -464,10 +750,24 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
   }
 
   Future<void> _deleteEntry(EspFsEntry entry) async {
+    bool isFolder = entry.isDir;
+    if (isFolder) {
+      _toast('Menghapus folder dan isinya...');
+    }
     try {
+      if (isFolder) {
+        final prefix = '${entry.name}/';
+        final children = _entries.where((e) => e.name.startsWith(prefix) && e.name != entry.name).toList();
+        children.sort((a, b) => b.name.length.compareTo(a.name.length));
+        
+        for (var child in children) {
+          await _withBaseFallback((base) => _service.deletePath(base, child.name));
+        }
+      }
+      
       await _withBaseFallback((base) => _service.deletePath(base, entry.name));
       _toast('Delete berhasil');
-      await _refreshAll();
+      await _refreshAll(showToast: false);
     } catch (e) {
       _toast('Delete gagal', isError: true);
     }
@@ -496,8 +796,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
                   lines: [
                     '1) Di device ESP32 pilih menu Up Media sampai mode AP aktif.',
                     '2) Di HP sambungkan Wi-Fi ke SSID ESP32-Media-App (password 12345678).',
-                    '3) Base URL otomatis hardcoded: 192.168.4.1 lalu fallback ke ganci.local.',
-                    '4) Upload bisa pilih file/folder berisi .qoi/.gif/.bin dari Download/image2cpp.',
+                    '3) Upload bisa pilih file/folder berisi .qoi/.bin dari Download/image2cpp.',
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -592,87 +891,48 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                TextField(
-                  controller: _targetDirCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Target Directory (LittleFS path)',
-                    hintText: '/media',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 10),
                 Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+                  spacing: 12,
+                  runSpacing: 12,
                   children: [
                     ElevatedButton.icon(
                       onPressed: _uploading ? null : _pickFiles,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: const Color(0xFF6252E7),
+                        elevation: 1,
+                      ),
                       icon: const Icon(Icons.attach_file_rounded),
-                      label: const Text('Pilih File'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: _uploading ? null : _pickFolderFiles,
-                      icon: const Icon(Icons.folder_open_rounded),
-                      label: const Text('Pilih Folder'),
+                      label: const Text('Pilih File/Folder'),
                     ),
                     ElevatedButton.icon(
                       onPressed: _uploading ? null : _uploadSelected,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF6252E7),
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor:
+                            const Color(0xFF6252E7).withValues(alpha: 0.75),
+                        disabledForegroundColor: Colors.white,
+                      ),
                       icon: _uploading
                           ? const SizedBox(
                               width: 14,
                               height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                             )
                           : const Icon(Icons.upload_rounded),
-                      label: Text(_uploading
-                          ? 'Uploading...'
-                          : 'Upload via POST /upload'),
+                      label: Text(_uploading ? 'Uploading...' : 'Upload'),
                     ),
                   ],
                 ),
                 const SizedBox(height: 10),
                 if (_selectedFiles.isEmpty)
                   const Text(
-                    'Belum ada file dipilih (.qoi/.gif/.bin).',
+                    'Belum ada file dipilih (.qoi/.bin).',
                     style: TextStyle(color: Color(0xFF5F6680), fontSize: 13),
                   )
-                else if (_selectedFromFolder)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF7F5FF),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFC9C3FF)),
-                    ),
-                    child: Text(
-                      'Folder ${_selectedFolderName ?? '-'} dipilih (${_selectedFiles.length} file)',
-                      style: const TextStyle(
-                        color: Color(0xFF3F4670),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  )
                 else
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: _selectedFiles
-                        .map(
-                          (f) => Padding(
-                            padding: const EdgeInsets.only(bottom: 6),
-                            child: Text(
-                              '- ${f.name} (${_formatBytes(f.size)})',
-                              style: const TextStyle(
-                                color: Color(0xFF3F4670),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        )
-                        .toList(),
-                  ),
+                  _buildPreviewExpandedUI(),
               ],
             ),
           ),
@@ -736,24 +996,165 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
           ),
         ),
         const SizedBox(height: 14),
-        const SizedBox(
+        SizedBox(
           width: double.infinity,
           child: _GuideStepCard(
-            title: 'Kontrak Firmware yang Dipakai (hasil analisa ganci.ino)',
+            title: 'Bantuan & Dukungan',
             outlined: true,
-            child: _GuideLabeledList(
-              items: [
-                _GuideItem(title: 'GET /status', description: 'Balikkan fs_total_mb, fs_used_mb, fs_free_mb, ram_total_kb, ram_free_kb, temp_c.'),
-                _GuideItem(title: 'GET /list', description: 'Balikkan array files: name, is_dir, size dari root LittleFS.'),
-                _GuideItem(title: 'POST /delete', description: 'Wajib body arg path, akan remove file atau rmdir folder.'),
-                _GuideItem(title: 'POST /upload', description: 'Multipart upload; nama file dipakai sebagai path target (contoh /media/a.bin).'),
-                _GuideItem(title: 'AP Config', description: 'SSID ESP32-Media-App, password 12345678, host ganci.local, IP 192.168.4.1.'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Jika ada error atau masalah lainnya hubungi no di bawah ini:',
+                  style: TextStyle(color: Color(0xFF5F6680), fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    final uri = Uri.parse('https://wa.link/7zvetw');
+                    try {
+                      final success = await launchUrl(uri, mode: LaunchMode.externalApplication);
+                      if (!success) {
+                        _toast('Tidak dapat membuka WhatsApp', isError: true);
+                      }
+                    } catch (_) {
+                      _toast('Ponsel Anda tidak memiliki aplikasi pendukung tautan', isError: true);
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF25D366),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                  icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
+                  label: const Text('Hubungi WhatsApp', style: TextStyle(fontWeight: FontWeight.w600)),
+                ),
               ],
             ),
           ),
         ),
       ],
     );
+  }
+
+  Widget _buildPreviewExpandedUI() {
+    final Map<String, List<PlatformFile>> grouped = {};
+    final List<PlatformFile> rootFiles = [];
+
+    for (final f in _selectedFiles) {
+      if (f.name.contains('/')) {
+        final parts = f.name.split('/');
+        final folderName = parts.first;
+        grouped.putIfAbsent(folderName, () => []).add(f);
+      } else {
+        rootFiles.add(f);
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Antrean Upload (${_selectedFiles.length} file)', style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF3F4670), fontSize: 13)),
+            TextButton.icon(
+              onPressed: () {
+                setState(() => _selectedFiles = []);
+              },
+              icon: const Icon(Icons.clear_all_rounded, size: 16, color: Color(0xFFB42318)),
+              label: const Text('Clear All', style: TextStyle(color: Color(0xFFB42318), fontSize: 13, fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ...grouped.entries.map((e) {
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF7F5FF),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFC9C3FF)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.folder_rounded, color: Color(0xFF6252E7), size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${e.key} (${e.value.length} file)',
+                      style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF3F4670), fontSize: 13),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 18, color: Color(0xFFB42318)),
+                    constraints: const BoxConstraints(),
+                    padding: EdgeInsets.zero,
+                    onPressed: () {
+                      setState(() {
+                        _selectedFiles.removeWhere((f) => f.name.startsWith('${e.key}/'));
+                      });
+                    },
+                  ),
+                ],
+              ),
+            );
+        }),
+        ...rootFiles.map((f) {
+           return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFE2E0EC)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.insert_drive_file_rounded, color: Color(0xFF5F6680), size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${f.name} (${_formatBytes(f.size)})',
+                      style: const TextStyle(fontSize: 13, color: Color(0xFF5F6680)),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 18, color: Color(0xFFB42318)),
+                    constraints: const BoxConstraints(),
+                    padding: EdgeInsets.zero,
+                    onPressed: () {
+                      setState(() {
+                        _selectedFiles.remove(f);
+                      });
+                    },
+                  ),
+                ],
+              ),
+            );
+        }),
+      ],
+    );
+  }
+
+  int _getFolderSizeSync(Directory dir) {
+    int total = 0;
+    try {
+      for (var e in dir.listSync(recursive: true, followLinks: false)) {
+        if (e is File) {
+          final ext = e.path.split('.').last.toLowerCase();
+          if (ext == 'qoi' || ext == 'bin') {
+            total += e.lengthSync();
+          }
+        }
+      }
+    } catch (_) {}
+    return total;
   }
 
   String _formatBytes(int bytes) {
