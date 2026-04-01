@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_settings.dart';
 import '../providers/app_state.dart';
@@ -38,6 +38,10 @@ class _HomeScreenState extends State<HomeScreen> {
       state.onToast = (msg, {bool isError = false}) {
         if (!mounted) return;
         AppToast.show(context, msg, isError: isError);
+      };
+      state.onNavigateToUpload = () {
+        if (!mounted) return;
+        _selectTab(_MenuTab.apTransferGuide);
       };
     });
 

@@ -187,6 +187,7 @@ class ImageProcessor {
 
     // Map antiAlias setting to image package interpolation
     final interp = _mapInterpolation(s.antiAlias);
+    final useSmart = s.antiAlias == AntiAliasMode.smart;
 
     switch (s.scale) {
       case ScaleMode.original:
@@ -199,36 +200,32 @@ class ImageProcessor {
               .reduce((a, b) => a < b ? a : b);
           drawW = (src.width * ratio).round();
           drawH = (src.height * ratio).round();
-          src = img.copyResize(src,
-              width: drawW,
-              height: drawH,
-              interpolation: interp);
+          src = useSmart
+              ? _smartResize(src, drawW, drawH, interp)
+              : img.copyResize(src, width: drawW, height: drawH, interpolation: interp);
           if (s.centerHorizontally) offsetX = (canvasW - drawW) ~/ 2;
           if (s.centerVertically) offsetY = (canvasH - drawH) ~/ 2;
           break;
         }
       case ScaleMode.stretchToFill:
-        src = img.copyResize(src,
-            width: canvasW,
-            height: canvasH,
-            interpolation: interp);
+        src = useSmart
+            ? _smartResize(src, canvasW, canvasH, interp)
+            : img.copyResize(src, width: canvasW, height: canvasH, interpolation: interp);
         drawW = canvasW;
         drawH = canvasH;
         break;
       case ScaleMode.stretchHorizontally:
-        src = img.copyResize(src,
-            width: canvasW,
-            height: src.height,
-            interpolation: interp);
+        src = useSmart
+            ? _smartResize(src, canvasW, src.height, interp)
+            : img.copyResize(src, width: canvasW, height: src.height, interpolation: interp);
         drawW = canvasW;
         drawH = src.height;
         if (s.centerVertically) offsetY = (canvasH - drawH) ~/ 2;
         break;
       case ScaleMode.stretchVertically:
-        src = img.copyResize(src,
-            width: src.width,
-            height: canvasH,
-            interpolation: interp);
+        src = useSmart
+            ? _smartResize(src, src.width, canvasH, interp)
+            : img.copyResize(src, width: src.width, height: canvasH, interpolation: interp);
         drawW = src.width;
         drawH = canvasH;
         if (s.centerHorizontally) offsetX = (canvasW - drawW) ~/ 2;
@@ -274,7 +271,42 @@ class ImageProcessor {
       case AntiAliasMode.cubic: return img.Interpolation.cubic;
       case AntiAliasMode.average: return img.Interpolation.average;
       case AntiAliasMode.gaussian3x3: return img.Interpolation.linear;
+      case AntiAliasMode.smart: return img.Interpolation.cubic;
     }
+  }
+
+  /// Smart multi-step downscale with Gaussian pre-blur.
+  /// When the source is significantly larger than the target (> 2× in either
+  /// dimension), a single resize produces heavy aliasing ("pixelated" look).
+  /// This method progressively halves the source while applying a light
+  /// Gaussian blur at each step, then performs the final resize to the exact
+  /// target. The result is dramatically smoother, especially for photos being
+  /// shrunk to small canvases like 240×240.
+  static img.Image _smartResize(
+    img.Image src,
+    int targetW,
+    int targetH,
+    img.Interpolation interp,
+  ) {
+    if (targetW <= 0 || targetH <= 0) return src;
+    if (src.width == targetW && src.height == targetH) return src;
+
+    // Progressive halving with blur when downscale ratio > 2×
+    var current = src;
+    while (current.width > targetW * 2 || current.height > targetH * 2) {
+      final halfW = (current.width / 2).round().clamp(targetW, current.width);
+      final halfH = (current.height / 2).round().clamp(targetH, current.height);
+      // Light Gaussian before each halve to prevent moire
+      current = img.gaussianBlur(current, radius: 1);
+      current = img.copyResize(current,
+          width: halfW, height: halfH,
+          interpolation: img.Interpolation.average);
+    }
+
+    // Final resize to exact target dimensions
+    return img.copyResize(current,
+        width: targetW, height: targetH,
+        interpolation: interp);
   }
 
   static img.Image _quantize565(img.Image src) {

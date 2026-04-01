@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_settings.dart';
 import '../providers/app_state.dart';
@@ -154,57 +154,13 @@ class _SettingsPanelState extends State<SettingsPanel> {
         ),
         const SizedBox(height: 16),
 
-        // --- Background Color ---
-        _sectionTitle('Background Color'),
-        _radioRow<BackgroundColor>(
-          options: [
-            BackgroundColor.white,
-            BackgroundColor.black,
-            BackgroundColor.transparent
-          ],
-          labels: ['White', 'Black', 'Transparent'],
-          current: s.backgroundColor,
-          onChanged: (v) => _update((s) => s.copyWith(backgroundColor: v),
-              description: 'Background -> ${v.name}'),
-        ),
-        const SizedBox(height: 16),
-
-        // --- Invert Colors ---
-        _switchRow('Invert image colors', s.invertColors,
-            (v) => _update((s) => s.copyWith(invertColors: v),
-            description: v ? 'Invert -> ON' : 'Invert -> OFF')),
-        const SizedBox(height: 16),
-
-        // --- Dithering ---
-        _sectionTitle('Dithering'),
-        _dropdownRow<DitheringMode>(
-          value: s.ditheringMode,
-          items: const [
-            DropdownMenuItem(
-                value: DitheringMode.binary, child: Text('Binary')),
-            DropdownMenuItem(value: DitheringMode.bayer, child: Text('Bayer')),
-            DropdownMenuItem(
-                value: DitheringMode.floydSteinberg,
-                child: Text('Floyd-Steinberg')),
-            DropdownMenuItem(
-                value: DitheringMode.atkinson, child: Text('Atkinson')),
-          ],
-          onChanged: (v) {
-            if (v != null) _update((s) => s.copyWith(ditheringMode: v),
-                description: 'Dithering -> ${v.name}');
-          },
-        ),
-        const SizedBox(height: 8),
-        _sectionTitle('Brightness / Alpha Threshold (0-255)'),
-        _numField(_thresholdCtrl, _threshFocus, 'Threshold',
-            (v) => _applyThreshold()),
-        const SizedBox(height: 16),
-
         // --- Anti-Alias ---
         _sectionTitle('Anti-Aliasing'),
         _dropdownRow<AntiAliasMode>(
           value: s.antiAlias,
           items: const [
+            DropdownMenuItem(
+                value: AntiAliasMode.smart, child: Text('Smart (auto smooth)')),
             DropdownMenuItem(
                 value: AntiAliasMode.nearest, child: Text('Nearest (sharp)')),
             DropdownMenuItem(

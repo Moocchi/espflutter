@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_settings.dart';
 import '../providers/app_state.dart';
@@ -87,59 +87,7 @@ class _OutputPanelState extends State<OutputPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // --- Output Format ---
-        _sectionTitle('Code Output Format'),
-        _dropdownRow<OutputFormat>(
-          value: s.outputFormat,
-          items: const [
-            DropdownMenuItem(
-                value: OutputFormat.plain, child: Text('Plain bytes')),
-            DropdownMenuItem(
-                value: OutputFormat.arduino, child: Text('Arduino code')),
-            DropdownMenuItem(
-                value: OutputFormat.arduinoSingle,
-                child: Text('Arduino code, single bitmap')),
-          ],
-          onChanged: (v) {
-            if (v != null) _update((s) => s.copyWith(outputFormat: v),
-                description: 'Output -> ${v.name}');
-          },
-        ),
-        const SizedBox(height: 12),
 
-        // --- Identifier ---
-        if (s.outputFormat != OutputFormat.plain) ...[
-          _sectionTitle('Identifier / Prefix'),
-          SizedBox(
-            width: double.infinity,
-            child: TextField(
-              controller: _identifierCtrl,
-              style: const TextStyle(
-                color: Color(0xFF2F3445),
-                fontWeight: FontWeight.w600,
-              ),
-              decoration: InputDecoration(
-                isDense: true,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                filled: true,
-                fillColor: const Color(0xFFF7F5FF),
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Color(0xFFC9C3FF))),
-                enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Color(0xFFC9C3FF))),
-                focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide:
-                        const BorderSide(color: Color(0xFF6252E7), width: 1.4)),
-              ),
-              onChanged: (v) => _update((s) => s.copyWith(identifier: v)),
-            ),
-          ),
-          const SizedBox(height: 12),
-        ],
 
         // --- Draw Mode ---
         _sectionTitle('Draw Mode'),
@@ -169,23 +117,7 @@ class _OutputPanelState extends State<OutputPanel> {
         ),
         const SizedBox(height: 12),
 
-        // --- Bit options ---
-        Wrap(
-          spacing: 8,
-          children: [
-            _checkboxRow('Swap bits in byte', s.bitswap,
-                (v) => _update((s) => s.copyWith(bitswap: v ?? false),
-                    description: 'Bitswap -> ${(v ?? false) ? 'ON' : 'OFF'}')),
-            if (s.outputFormat == OutputFormat.plain)
-              _checkboxRow(
-                  "Remove '0x' and commas",
-                  s.removeZeroesCommas,
-                  (v) => _update(
-                      (s) => s.copyWith(removeZeroesCommas: v ?? false),
-                      description: 'Remove 0x -> ${(v ?? false) ? 'ON' : 'OFF'}')),
-          ],
-        ),
-        const SizedBox(height: 24),
+
 
         // --- Info note ---
         Container(
@@ -238,6 +170,17 @@ class _OutputPanelState extends State<OutputPanel> {
                         _showSaveSnack('No frames to export', error: true);
                       } else {
                         _showSaveSnack('${result.fileName} disimpan');
+                        state.clearFiles();
+                        if (mounted) {
+                          AppToast.showWithAction(
+                            context,
+                            'Upload file?',
+                            actionLabel: 'Upload',
+                            onAction: () => state.onNavigateToUpload?.call(),
+                            durationMs: 5000,
+                            delayMs: 2500,
+                          );
+                        }
                       }
                     },
             ),
@@ -260,6 +203,17 @@ class _OutputPanelState extends State<OutputPanel> {
                         _showSaveSnack('No frames to export', error: true);
                       } else {
                         _showSaveSnack('${result.fileName} disimpan');
+                        state.clearFiles();
+                        if (mounted) {
+                          AppToast.showWithAction(
+                            context,
+                            'Upload file?',
+                            actionLabel: 'Upload',
+                            onAction: () => state.onNavigateToUpload?.call(),
+                            durationMs: 5000,
+                            delayMs: 2500,
+                          );
+                        }
                       }
                     },
             ),

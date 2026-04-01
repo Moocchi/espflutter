@@ -25,6 +25,13 @@ class AppState extends ChangeNotifier {
     onToast?.call(msg, isError: isError);
   }
   
+  void Function()? onNavigateToUpload;
+
+  void clearFiles() {
+    loadedFiles = [];
+    notifyListeners();
+  }
+  
   // Debounce timer for settings updates
   Timer? _debounceTimer;
 

@@ -42,6 +42,7 @@ enum AntiAliasMode {
   cubic,
   average,
   gaussian3x3,
+  smart,
 }
 
 class AppSettings {
@@ -72,7 +73,7 @@ class AppSettings {
     this.ditheringMode = DitheringMode.binary,
     this.ditheringThreshold = 128,
     this.scale = ScaleMode.stretchToFill,
-    this.antiAlias = AntiAliasMode.linear,
+    this.antiAlias = AntiAliasMode.smart,
     this.centerHorizontally = false,
     this.centerVertically = false,
     this.rotation = 0,

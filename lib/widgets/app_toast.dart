@@ -11,14 +11,58 @@ class AppToast {
     BuildContext context,
     String message, {
     bool isError = false,
+    int? durationMs,
+  }) {
+    _showInternal(context, message, isError: isError, durationMs: durationMs);
+  }
+
+  /// Show a toast with a tappable action label (like "Upload").
+  /// [delayMs] waits before showing, so the previous toast has time to fade.
+  static void showWithAction(
+    BuildContext context,
+    String message, {
+    required String actionLabel,
+    required VoidCallback onAction,
+    int durationMs = 5000,
+    int delayMs = 0,
+  }) {
+    if (delayMs > 0) {
+      Timer(Duration(milliseconds: delayMs), () {
+        if (!context.mounted) return;
+        _showInternal(
+          context, message,
+          actionLabel: actionLabel,
+          onAction: onAction,
+          durationMs: durationMs,
+        );
+      });
+    } else {
+      _showInternal(
+        context, message,
+        actionLabel: actionLabel,
+        onAction: onAction,
+        durationMs: durationMs,
+      );
+    }
+  }
+
+  static void _showInternal(
+    BuildContext context,
+    String message, {
+    bool isError = false,
+    String? actionLabel,
+    VoidCallback? onAction,
+    int? durationMs,
   }) {
     if (!context.mounted) return;
 
+    // Dedup: if same message is already shown, just reset the timer
     if (_current != null && _activeKey?.currentState != null && !(_activeKey!.currentState!._dismissed)) {
       if (_lastMessage == message) {
         _autoTimer?.cancel();
+        final dur = durationMs ?? (isError ? 2400 : 2200);
         _autoTimer = Timer(
-          Duration(milliseconds: isError ? 2400 : 2200),
+          Duration(milliseconds: dur),
           () {
             _activeKey?.currentState?.fadeOut();
           },
@@ -53,6 +97,12 @@ class AppToast {
         key: key,
         message: message,
         isError: isError,
+        actionLabel: actionLabel,
+        onAction: onAction != null ? () {
+          onAction();
+          // dismiss after tap
+          key.currentState?.fadeOut();
+        } : null,
         onDismissed: () {
           try { entry.remove(); } catch (_) {}
           if (_current == entry) {
@@ -72,10 +122,11 @@ class AppToast {
         message.toLowerCase().contains('loading');
 
     if (!isPinned) {
+      final dur = durationMs ?? (isError ? 2400 : 2200);
       _autoTimer = Timer(
-        Duration(milliseconds: isError ? 2400 : 2200),
+        Duration(milliseconds: dur),
         () {
-        _activeKey?.currentState?.fadeOut();
+          _activeKey?.currentState?.fadeOut();
         },
       );
     }
@@ -85,12 +136,16 @@ class AppToast {
 class _ToastWidget extends StatefulWidget {
   final String message;
   final bool isError;
+  final String? actionLabel;
+  final VoidCallback? onAction;
   final VoidCallback onDismissed;
 
   const _ToastWidget({
     super.key,
     required this.message,
     required this.isError,
+    this.actionLabel,
+    this.onAction,
     required this.onDismissed,
   });
 
@@ -156,54 +211,75 @@ class _ToastWidgetState extends State<_ToastWidget>
       builder: (context, _) {
         // _slide.value: -80 → 0, so bottom goes from (base-80) → base (slides up)
         final bottom = baseBottom + _slide.value;
-        return Positioned(
-          bottom: bottom,
-          left: 0,
-          right: 0,
-          child: IgnorePointer(
-            child: Material(
-              color: Colors.transparent,
-              child: FadeTransition(
-                opacity: _fade,
-                child: Align(
-                  alignment: Alignment.bottomCenter,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 360),
-                    child: IntrinsicWidth(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 18, vertical: 14),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: const Color(0xFFE7E8EC)),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.16),
-                              blurRadius: 16,
-                              offset: const Offset(0, 4),
+        final hasAction = widget.actionLabel != null;
+        final innerContent = Material(
+            color: Colors.transparent,
+            child: FadeTransition(
+              opacity: _fade,
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 360),
+                  child: IntrinsicWidth(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 18, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFE7E8EC)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.16),
+                            blurRadius: 16,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              widget.message,
+                              style: const TextStyle(
+                                color: Color(0xFF22252F),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              maxLines: 4,
+                              overflow: TextOverflow.fade,
+                              softWrap: true,
+                              textAlign: TextAlign.left,
+                            ),
+                          ),
+                          if (hasAction) ...[
+                            const SizedBox(width: 12),
+                            GestureDetector(
+                              onTap: widget.onAction,
+                              child: Text(
+                                widget.actionLabel!,
+                                style: const TextStyle(
+                                  color: Color(0xFF6252E7),
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
                             ),
                           ],
-                        ),
-                        child: Text(
-                          widget.message,
-                          style: const TextStyle(
-                            color: Color(0xFF22252F),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          maxLines: 4,
-                          overflow: TextOverflow.fade,
-                          softWrap: true,
-                          textAlign: TextAlign.left,
-                        ),
+                        ],
                       ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
+        );
+        return Positioned(
+          bottom: bottom,
+          left: 0,
+          right: 0,
+          child: hasAction ? innerContent : IgnorePointer(child: innerContent),
         );
       },
     );
