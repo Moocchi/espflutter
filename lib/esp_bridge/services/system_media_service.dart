@@ -162,7 +162,15 @@ class SystemMediaBridgeService {
       _priorityBusy = true;
       try {
         final info = await FlutterMediaController.getCurrentMediaInfo();
-        _isPlaying = info.isPlaying;
+        
+        // Deteksi secara instan kalau status play/pause berubah 
+        if (_isPlaying != info.isPlaying) {
+          _isPlaying = info.isPlaying;
+          if (_bleService.currentStatus == BleStatus.connected) {
+            unawaited(_bleService.sendStatus(_isPlaying));
+          }
+        }
+
         final newPos = info.position < 0 ? 0 : info.position;
 
         // Selalu update State UI paling cepat disini jika ada perubahan detik/lagu
@@ -347,7 +355,7 @@ class SystemMediaBridgeService {
               } else {
                 _lyricsCooldownUntilMs = 0;
                 // Beritahu ESP jika lirik benar-benar tidak ditemukan / gagal diambil
-                _bleService.sendLyrics("", "     (Lyrics not found)     ", "");
+                _bleService.sendLyrics("", "Lyric Not Found", "");
                 
                 // Hapus tulisan 'Lyrics not found' setelah tampil 10 detik
                 Future.delayed(const Duration(seconds: 10), () {
@@ -365,7 +373,11 @@ class SystemMediaBridgeService {
     } else if (info.duration != _currentDuration && info.duration > 0) {
       _currentDuration = info.duration;
       // Jika durasi baru tersedia dan lirik belum ketemu, coba sekali lagi dengan durasi valid.
-      if (_lastLyricsDurationMs <= 0 && !_lyricsService.hasLyrics) {
+      // Juga retry jika durasi sebelumnya berbeda signifikan (>2 detik) — bisa jadi search pertama gagal karena durasi salah.
+      final durationDiffMs = (_lastLyricsDurationMs - info.duration).abs();
+      final shouldRetryLyrics = !_lyricsService.hasLyrics && 
+          (_lastLyricsDurationMs <= 0 || durationDiffMs > 2000);
+      if (shouldRetryLyrics) {
         _lastLyricsDurationMs = info.duration;
         _lyricsService.fetchLyrics(
           _currentTitle,

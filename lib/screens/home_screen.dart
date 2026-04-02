@@ -78,51 +78,58 @@ class _HomeScreenState extends State<HomeScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isDesktop = constraints.maxWidth >= 820;
-        return Scaffold(
-          drawerEnableOpenDragGesture: !isDesktop,
-          onDrawerChanged: (isOpen) {
-            if (_selectedTab != _MenuTab.espBridge) {
-              return;
-            }
-            if (isOpen) {
-              _espBridgeService.setUiBusy(true);
-            } else {
-              _espBridgeService.setUiBusy(false, holdMsAfterRelease: 240);
-            }
+        return PopScope(
+          canPop: _selectedTab == _MenuTab.home,
+          onPopInvokedWithResult: (didPop, result) {
+            if (didPop) return;
+            _selectTab(_MenuTab.home);
           },
-          backgroundColor: const Color(0xFFF3F2FF),
-          drawer: isDesktop
-              ? null
-              : _SidebarMenu(
-                  selectedTab: _selectedTab,
-                  onBeforeSelect: _prepareDrawerSelection,
-                  onSelected: _selectTab,
-                ),
-          body: SafeArea(
-            child: Row(
-              children: [
-                if (isDesktop)
-                  _SidebarMenu(
+          child: Scaffold(
+            drawerEnableOpenDragGesture: !isDesktop,
+            onDrawerChanged: (isOpen) {
+              if (_selectedTab != _MenuTab.espBridge) {
+                return;
+              }
+              if (isOpen) {
+                _espBridgeService.setUiBusy(true);
+              } else {
+                _espBridgeService.setUiBusy(false, holdMsAfterRelease: 240);
+              }
+            },
+            backgroundColor: const Color(0xFFF3F2FF),
+            drawer: isDesktop
+                ? null
+                : _SidebarMenu(
                     selectedTab: _selectedTab,
+                    onBeforeSelect: _prepareDrawerSelection,
                     onSelected: _selectTab,
                   ),
-                Expanded(
-                  child: _selectedTab == _MenuTab.espBridge
-                      ? _EspBridgeContent(showMenuButton: !isDesktop)
-                      : SingleChildScrollView(
-                          padding: const EdgeInsets.all(20),
-                          child: _selectedTab == _MenuTab.home
-                              ? _HomeContent(showMenuButton: !isDesktop)
-                              : _selectedTab == _MenuTab.imageConverter
-                                  ? _ConverterContent(
-                                      showMenuButton: !isDesktop,
-                                    )
-                                  : ApTransferGuideContent(
-                                      showMenuButton: !isDesktop,
-                                    ),
-                        ),
-                ),
-              ],
+            body: SafeArea(
+              child: Row(
+                children: [
+                  if (isDesktop)
+                    _SidebarMenu(
+                      selectedTab: _selectedTab,
+                      onSelected: _selectTab,
+                    ),
+                  Expanded(
+                    child: _selectedTab == _MenuTab.espBridge
+                        ? _EspBridgeContent(showMenuButton: !isDesktop)
+                        : SingleChildScrollView(
+                            padding: const EdgeInsets.all(20),
+                            child: _selectedTab == _MenuTab.home
+                                ? _HomeContent(showMenuButton: !isDesktop)
+                                : _selectedTab == _MenuTab.imageConverter
+                                    ? _ConverterContent(
+                                        showMenuButton: !isDesktop,
+                                      )
+                                    : ApTransferGuideContent(
+                                        showMenuButton: !isDesktop,
+                                      ),
+                          ),
+                  ),
+                ],
+              ),
             ),
           ),
         );

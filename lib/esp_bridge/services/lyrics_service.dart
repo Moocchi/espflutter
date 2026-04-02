@@ -20,7 +20,7 @@ class LyricsService {
   factory LyricsService() => _instance;
   LyricsService._internal();
 
-  final http.Client _httpClient = http.Client();
+  http.Client _httpClient = http.Client();
   final Future<void> _storageInit = Future<void>.value();
   List<LyricLine> _lines = [];
   int _activeIndex = -1;
@@ -73,19 +73,30 @@ class LyricsService {
 
     int? durationSec;
     if (durationMs != null && durationMs > 0) {
-      // Some sources report seconds instead of milliseconds; normalize safely.
-      final normalized = durationMs < 1000 ? durationMs : (durationMs / 1000).round();
-      if (normalized > 0) {
-        durationSec = normalized;
+      // Android mediaSession reports duration inconsistently:
+      // Some apps report milliseconds (e.g. 240000), others seconds (e.g. 240).
+      // Heuristic: if value > 10000, it's almost certainly milliseconds.
+      if (durationMs > 10000) {
+        durationSec = (durationMs / 1000).round();
+      } else {
+        // Could be seconds already (e.g. 240) or very short audio in ms.
+        // Treat as seconds if > 10 (unlikely to have >10s audio reported as ms).
+        durationSec = durationMs > 10 ? durationMs : null;
       }
     }
 
-    // Kumpulan percobaan (Retries) 1. original, 2. normalized, 3. search with artist, 4. search without artist
-    // Kita buat logic retry hingga 3 kali maksimal total gabungan per langkah jika error network
-    int maxRetries = 3;
+    // ══════════════════════════════════════════════════════════════════
+    // STRATEGI PENCARIAN (dioptimalkan berdasarkan perilaku LRCLIB):
+    //
+    // LRCLIB /api/search SANGAT ketat soal durasi — selisih 1 detik = 0 hasil.
+    // Oleh karena itu, pencarian search/q dilakukan TANPA durasi dulu.
+    // Durasi hanya dipakai untuk /api/get (direct lookup) sebagai filter presisi.
+    // ══════════════════════════════════════════════════════════════════
+    int maxRetries = 4;
     
     while (maxRetries > 0) {
       try {
+        // ── Langkah 1: Direct GET (dengan durasi jika ada, paling presisi) ──
         final primary = await _fetchByGet(track: track, artist: artist, durationSec: durationSec);
         if (primary) {
           _saveCache(primaryKey);
@@ -93,8 +104,19 @@ class LyricsService {
           return true;
         }
 
+        // ── Langkah 2: Direct GET tanpa durasi (jika langkah 1 gagal karena durasi) ──
+        if (durationSec != null) {
+          final noDurGet = await _fetchByGet(track: track, artist: artist);
+          if (noDurGet) {
+            _saveCache(primaryKey);
+            _saveCache(normalizedKey);
+            return true;
+          }
+        }
+
+        // ── Langkah 3: Direct GET dengan nama yang di-normalize ──
         if (normalizedTrack != track || normalizedArtist != artist) {
-          final normalized = await _fetchByGet(track: normalizedTrack, artist: normalizedArtist, durationSec: durationSec);
+          final normalized = await _fetchByGet(track: normalizedTrack, artist: normalizedArtist);
           if (normalized) {
             _saveCache(normalizedKey);
             _saveCache(primaryKey);
@@ -102,74 +124,54 @@ class LyricsService {
           }
         }
 
-        final searchWithArtist = await _fetchBySearch(
+        // ── Langkah 4: Search TANPA durasi (search endpoint + durasi = bencana) ──
+        final searchResult = await _fetchBySearch(
           track: normalizedTrack,
           artist: normalizedArtist,
-          durationSec: durationSec,
         );
-        if (searchWithArtist) {
+        if (searchResult) {
           _saveCache(normalizedKey);
           _saveCache(primaryKey);
           return true;
         }
 
-        if (normalizedArtist != artist || normalizedTrack != track) {
-          final searchWithOriginal = await _fetchBySearch(
-            track: track,
-            artist: artist,
-            durationSec: durationSec,
-          );
-          if (searchWithOriginal) {
-            _saveCache(primaryKey);
-            _saveCache(normalizedKey);
-            return true;
-          }
-        }
-
-        final searchByQOriginal = await _fetchByQ(
-          query: '$track $artist',
-          durationSec: durationSec,
-        );
-        if (searchByQOriginal) {
-          _saveCache(primaryKey);
-          _saveCache(normalizedKey);
-          return true;
-        }
-
-        final searchByQ = await _fetchByQ(
-          query: '$normalizedTrack $normalizedArtist',
-          durationSec: durationSec,
-        );
-        if (searchByQ) {
-          _saveCache(normalizedKey);
-          _saveCache(primaryKey);
-          return true;
-        }
-        
-        // Pencarian ekstrem: Gunakan q dengan hanya judul lagu jika artisnya membuat rancu
-        final searchByQTrack = await _fetchByQ(
-          query: normalizedTrack,
-          durationSec: durationSec,
-        );
-        if (searchByQTrack) {
+        // ── Langkah 5: Q search TANPA durasi (paling fleksibel) ──
+        final qResult = await _fetchByQ(query: '$normalizedTrack $normalizedArtist');
+        if (qResult) {
           _saveCache(normalizedKey);
           _saveCache(primaryKey);
           return true;
         }
 
-        // Jika sampai sini, berarti API jalan tapi lirik memang tidak ada di database,
-        // tidak perlu retry karena bukan error network. Break loop.
+        // ── Langkah 6: Q search hanya judul (artis bisa bikin rancu) ──
+        final qTrackOnly = await _fetchByQ(query: normalizedTrack);
+        if (qTrackOnly) {
+          _saveCache(normalizedKey);
+          _saveCache(primaryKey);
+          return true;
+        }
+
+        // Jika sampai sini, berarti API jalan tapi lirik memang tidak ada di database.
         break;
       } catch (e) {
         maxRetries--;
-        if (kDebugMode) print('[Lyrics] Retry left: $maxRetries, error: $e');
+        if (kDebugMode) print('[Lyrics] Network error, retry left: $maxRetries — $e');
+        // Buat HTTP client baru agar DNS cache & koneksi basi di-flush
+        _resetHttpClient();
         if (maxRetries > 0) {
-          await Future.delayed(const Duration(seconds: 2));
+          await Future.delayed(const Duration(seconds: 4));
         }
       }
     }
 
     return false;
+  }
+
+  void _resetHttpClient() {
+    try {
+      _httpClient.close();
+    } catch (_) {}
+    _httpClient = http.Client();
   }
 
   Future<bool> _fetchByGet({required String track, required String artist, int? durationSec}) async {
@@ -207,6 +209,8 @@ class LyricsService {
       }
     } catch (e) {
       if (kDebugMode) print('[Lyrics] Fetch error: $e');
+      // Rethrow network errors so outer retry loop can handle them
+      if (_isNetworkError(e)) rethrow;
     }
     return false;
   }
@@ -257,6 +261,7 @@ class LyricsService {
       }
     } catch (e) {
       if (kDebugMode) print('[Lyrics] Search error: $e');
+      if (_isNetworkError(e)) rethrow;
     }
 
     return false;
@@ -302,8 +307,22 @@ class LyricsService {
       }
     } catch (e) {
       if (kDebugMode) print('[Lyrics] Q Search error: $e');
+      if (_isNetworkError(e)) rethrow;
     }
     return false;
+  }
+
+  /// Deteksi apakah error adalah masalah jaringan (DNS, timeout, socket).
+  /// Error jenis ini layak di-retry, bukan langsung menyerah.
+  static bool _isNetworkError(Object e) {
+    final msg = e.toString().toLowerCase();
+    return msg.contains('socketexception') ||
+        msg.contains('failed host lookup') ||
+        msg.contains('connection refused') ||
+        msg.contains('connection reset') ||
+        msg.contains('network is unreachable') ||
+        msg.contains('timeout') ||
+        msg.contains('clientexception');
   }
 
   String _makeCacheKey(String track, String artist) {
