@@ -20,6 +20,7 @@ class HomeScreen extends StatefulWidget {
 enum _MenuTab {
   home,
   imageConverter,
+  gifEditor,
   apTransferGuide,
   espBridge,
 }
@@ -123,6 +124,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ? _ConverterContent(
                                         showMenuButton: !isDesktop,
                                       )
+                                    : _selectedTab == _MenuTab.gifEditor
+                                        ? _GifEditorContent(
+                                            showMenuButton: !isDesktop,
+                                          )
                                     : ApTransferGuideContent(
                                         showMenuButton: !isDesktop,
                                       ),
@@ -248,6 +253,439 @@ class _ConverterContent extends StatelessWidget {
             title: 'Output',
             outlined: true,
             child: OutputPanel(),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _GifEditorContent extends StatelessWidget {
+  final bool showMenuButton;
+
+  const _GifEditorContent({required this.showMenuButton});
+
+  Future<String?> _showRenameDialog(BuildContext context, String defaultName) async {
+    final controller = TextEditingController(text: defaultName);
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFFFDFDFF),
+        title: const Text(
+          'Save Optimized GIF',
+          style: TextStyle(color: Color(0xFF2F3445)),
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: const TextStyle(color: Color(0xFF2F3445)),
+          decoration: InputDecoration(
+            hintText: 'Nama file .gif',
+            hintStyle: const TextStyle(color: Color(0xFF9AA0B3)),
+            filled: true,
+            fillColor: const Color(0xFFF7F5FF),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Color(0xFFC9C3FF)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Color(0xFFC9C3FF)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Color(0xFF6252E7), width: 1.4),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Batal', style: TextStyle(color: Color(0xFF6D7385))),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('Simpan', style: TextStyle(color: Color(0xFF6252E7))),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    final settings = state.gifEditorSettings;
+    final gif = state.gifEditorFile;
+    final hasGif = gif != null && gif.frames.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _HeaderSection(
+          showMenuButton: showMenuButton,
+          title: 'Gif Editor',
+          subtitle: 'Center crop, resize 240x240, and optimize GIF',
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: _StepCard(
+            title: 'Select GIF',
+            outlined: true,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _PrimaryActionButton(
+                  icon: Icons.gif_box_rounded,
+                  label: hasGif ? 'Choose Another GIF' : 'Choose GIF',
+                  onTap: state.isGifEditorProcessing ? null : state.pickGifForEditor,
+                ),
+                const SizedBox(height: 12),
+                if (hasGif)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF7F5FF),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFC9C3FF)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.check_circle_rounded, color: Color(0xFF6252E7), size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '${gif.name} • ${gif.frames.length} frames',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Color(0xFF6252E7),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  const Text(
+                    'Belum ada GIF dipilih.',
+                    style: TextStyle(color: Color(0xFF8E85ED), fontSize: 12),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        SizedBox(
+          width: double.infinity,
+          child: _StepCard(
+            title: 'GIF Settings',
+            outlined: true,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Center Crop',
+                        style: TextStyle(
+                          color: Color(0xFF3F4670),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    Switch(
+                      value: settings.centerCrop,
+                      activeColor: const Color(0xFF6252E7),
+                      onChanged: state.isGifEditorProcessing
+                          ? null
+                          : (value) {
+                              state.updateGifEditorSettings(
+                                settings.copyWith(centerCrop: value),
+                              );
+                            },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF7F5FF),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFC9C3FF)),
+                  ),
+                  child: const Text(
+                    'Resize target: 240 x 240 px',
+                    style: TextStyle(
+                      color: Color(0xFF4C42CF),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Fill Background',
+                  style: TextStyle(
+                    color: Color(0xFF3F4670),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _SelectionPill(
+                        active: settings.fillColor == GifFillColor.black,
+                        label: 'Black',
+                        onTap: state.isGifEditorProcessing
+                            ? null
+                            : () {
+                                state.updateGifEditorSettings(
+                                  settings.copyWith(fillColor: GifFillColor.black),
+                                );
+                              },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _SelectionPill(
+                        active: settings.fillColor == GifFillColor.white,
+                        label: 'White',
+                        onTap: state.isGifEditorProcessing
+                            ? null
+                            : () {
+                                state.updateGifEditorSettings(
+                                  settings.copyWith(fillColor: GifFillColor.white),
+                                );
+                              },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Optimization Method',
+                  style: TextStyle(
+                    color: Color(0xFF3F4670),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<GifOptimizationMethod>(
+                  value: settings.optimizationMethod,
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                    filled: true,
+                    fillColor: const Color(0xFFF7F5FF),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFFC9C3FF)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFFC9C3FF)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFF6252E7), width: 1.4),
+                    ),
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: GifOptimizationMethod.lossy,
+                      child: Text('Lossy Compression'),
+                    ),
+                  ],
+                  onChanged: state.isGifEditorProcessing
+                      ? null
+                      : (value) {
+                          if (value == null) return;
+                          state.updateGifEditorSettings(
+                            settings.copyWith(optimizationMethod: value),
+                            autoProcess: false,
+                          );
+                        },
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Compression',
+                        style: TextStyle(
+                          color: Color(0xFF3F4670),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF7F5FF),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFC9C3FF)),
+                      ),
+                      child: Text(
+                        '${settings.compressionLevel}',
+                        style: const TextStyle(
+                          color: Color(0xFF4C42CF),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    activeTrackColor: const Color(0xFF6252E7),
+                    inactiveTrackColor: const Color(0xFFD4D1FF),
+                    thumbColor: const Color(0xFF6252E7),
+                    overlayColor: const Color(0xFF6252E7).withOpacity(0.12),
+                  ),
+                  child: Slider(
+                    min: 1,
+                    max: 100,
+                    divisions: 99,
+                    value: settings.compressionLevel.toDouble(),
+                    onChanged: state.isGifEditorProcessing
+                        ? null
+                        : (value) {
+                            state.updateGifEditorSettings(
+                              settings.copyWith(compressionLevel: value.round()),
+                              autoProcess: false,
+                            );
+                          },
+                    onChangeEnd: state.isGifEditorProcessing
+                        ? null
+                        : (_) {
+                            state.processGifEditor(showToast: false);
+                          },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        SizedBox(
+          width: double.infinity,
+          child: _StepCard(
+            title: 'Process & Save',
+            outlined: true,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _PrimaryActionButton(
+                  icon: state.isGifEditorProcessing
+                      ? Icons.hourglass_top_rounded
+                      : Icons.auto_fix_high_rounded,
+                  label: state.isGifEditorProcessing ? 'Processing...' : 'Process GIF',
+                  onTap: (!hasGif || state.isGifEditorProcessing)
+                      ? null
+                      : () => state.processGifEditor(),
+                ),
+                const SizedBox(height: 12),
+                AnimatedOpacity(
+                  opacity: state.isGifEditorProcessing ? 0.45 : 1,
+                  duration: const Duration(milliseconds: 180),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: (!hasGif || state.isGifEditorProcessing)
+                          ? null
+                          : () async {
+                              final baseName = gif.name.contains('.')
+                                  ? gif.name.substring(0, gif.name.lastIndexOf('.'))
+                                  : gif.name;
+                              final customName = await _showRenameDialog(
+                                context,
+                                '${baseName}_optimized',
+                              );
+                              if (customName == null) return;
+
+                              final result = await state.saveOptimizedGif(
+                                customName: customName.isEmpty ? null : customName,
+                              );
+                              if (!context.mounted) return;
+                              if (result.path.isEmpty) {
+                                AppToast.show(
+                                  context,
+                                  'Gagal save optimized GIF',
+                                  isError: true,
+                                );
+                              } else {
+                                AppToast.show(
+                                  context,
+                                  '${result.fileName} disimpan',
+                                );
+                              }
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF6252E7),
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor:
+                            const Color(0xFF6252E7).withOpacity(0.65),
+                        disabledForegroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      icon: state.isGifEditorProcessing
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.save_alt_rounded),
+                      label: Text(
+                        state.isGifEditorProcessing
+                            ? 'Saving Optimized GIF...'
+                            : 'Save Optimized GIF',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        SizedBox(
+          width: double.infinity,
+          child: _StepCard(
+            title: 'Preview',
+            outlined: true,
+            child: hasGif
+              ? PreviewWidget(
+                frames: gif.frames
+                  .map((f) => f.sourceImage)
+                  .toList(growable: false),
+                isGif: true,
+                )
+                : const Text(
+                    'Pilih GIF terlebih dahulu untuk melihat preview.',
+                    style: TextStyle(color: Color(0xFF8E85ED), fontSize: 12),
+                  ),
           ),
         ),
       ],
@@ -584,6 +1022,13 @@ class _SidebarMenu extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           _NavTile(
+            icon: Icons.gif_box_rounded,
+            label: 'Gif Editor',
+            isActive: selectedTab == _MenuTab.gifEditor,
+            onTap: () => handleSelect(_MenuTab.gifEditor),
+          ),
+          const SizedBox(height: 8),
+          _NavTile(
             icon: Icons.wifi_tethering_rounded,
             label: 'AP Transfer',
             isActive: selectedTab == _MenuTab.apTransferGuide,
@@ -842,6 +1287,48 @@ class _FileCard extends StatelessWidget {
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SelectionPill extends StatelessWidget {
+  final bool active;
+  final String label;
+  final VoidCallback? onTap;
+
+  const _SelectionPill({
+    required this.active,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: active ? const Color(0xFFE8E4FF) : const Color(0xFFF7F5FF),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: active ? const Color(0xFF6252E7) : const Color(0xFFC9C3FF),
+            width: active ? 1.4 : 1,
+          ),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              color: active ? const Color(0xFF4C42CF) : const Color(0xFF5F6680),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
       ),
     );
   }

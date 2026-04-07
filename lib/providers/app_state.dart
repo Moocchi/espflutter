@@ -15,8 +15,39 @@ class AppState extends ChangeNotifier {
   List<LoadedFile> loadedFiles = [];
   String cppOutput = '';
   bool isProcessing = false;
+  bool isGifEditorProcessing = false;
   String statusMessage = '';
   bool userModifiedCanvas = false;
+  GifEditorSettings gifEditorSettings = GifEditorSettings();
+  LoadedFile? gifEditorFile;
+  List<ImageFrame> _gifEditorSourceFrames = [];
+  String? _gifEditorOriginalPath;
+
+  String _basenamePath(String path) {
+    final normalized = path.replaceAll('\\', '/');
+    final parts = normalized.split('/');
+    return parts.isEmpty ? path : parts.last;
+  }
+
+  String _basenameWithoutExt(String path) {
+    final name = _basenamePath(path);
+    final dot = name.lastIndexOf('.');
+    return dot <= 0 ? name : name.substring(0, dot);
+  }
+
+  String _dirnamePath(String path) {
+    final normalized = path.replaceAll('\\', '/');
+    final idx = normalized.lastIndexOf('/');
+    if (idx <= 0) return normalized;
+    return normalized.substring(0, idx);
+  }
+
+  String _joinPath(String dir, String fileName) {
+    if (dir.endsWith('/') || dir.endsWith('\\')) {
+      return '$dir$fileName';
+    }
+    return '$dir${Platform.pathSeparator}$fileName';
+  }
   
   // Toast callback -- set by the UI layer
   void Function(String message, {bool isError})? onToast;
@@ -147,10 +178,185 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> pickGifForEditor() async {
+    final result = await FilePicker.platform.pickFiles(
+      allowMultiple: false,
+      type: FileType.custom,
+      allowedExtensions: const ['gif'],
+      withData: true,
+    );
+
+    if (result == null || result.files.isEmpty) return;
+
+    final picked = result.files.first;
+    Uint8List? bytes;
+    if (picked.path != null) {
+      _gifEditorOriginalPath = picked.path;
+      bytes = await File(picked.path!).readAsBytes();
+    } else {
+      _gifEditorOriginalPath = null;
+      bytes = picked.bytes;
+    }
+
+    if (bytes == null) {
+      _showToast('Gagal membaca file GIF', isError: true);
+      return;
+    }
+
+    isGifEditorProcessing = true;
+    statusMessage = 'Loading GIF editor...';
+    notifyListeners();
+
+    try {
+      final frames = await compute(
+        _decodeGifEditorFramesIsolate,
+        _DecodeGifEditorArgs(picked.name, bytes),
+      );
+
+      _gifEditorSourceFrames = frames;
+      await processGifEditor(showToast: false);
+
+      if (gifEditorFile == null || gifEditorFile!.frames.isEmpty) {
+        _showToast('GIF tidak memiliki frame valid', isError: true);
+      } else {
+        _showToast('GIF loaded: ${gifEditorFile!.frames.length} frame(s)');
+      }
+    } catch (e) {
+      debugPrint('Error loading GIF editor file: $e');
+      _showToast('Gagal memproses GIF', isError: true);
+    } finally {
+      isGifEditorProcessing = false;
+      statusMessage = '';
+      notifyListeners();
+    }
+  }
+
   void removeFile(LoadedFile file) {
     loadedFiles.remove(file);
     cppOutput = '';
     notifyListeners();
+  }
+
+  Future<void> updateGifEditorSettings(GifEditorSettings newSettings,
+      {bool autoProcess = true}) async {
+    gifEditorSettings = newSettings;
+    notifyListeners();
+
+    if (autoProcess) {
+      await processGifEditor(showToast: false);
+    }
+  }
+
+  Future<void> processGifEditor({bool showToast = true}) async {
+    if (_gifEditorSourceFrames.isEmpty) return;
+
+    isGifEditorProcessing = true;
+    statusMessage = 'Optimizing GIF...';
+    notifyListeners();
+
+    try {
+      final processed = await compute(
+        _processGifEditorFramesIsolate,
+        _ProcessGifEditorArgs(
+          _gifEditorSourceFrames.map((f) => f.sourceImage).toList(),
+          gifEditorSettings,
+        ),
+      );
+
+      final outputFrames = <ImageFrame>[];
+      for (int i = 0; i < processed.length; i++) {
+        final src = _gifEditorSourceFrames[i];
+        outputFrames.add(ImageFrame(
+          name: src.name,
+          sourceImage: processed[i],
+          glyph: src.glyph,
+          frameDurationCs: src.frameDurationCs,
+        ));
+      }
+
+      final originalName =
+          _gifEditorOriginalPath != null ? _basenamePath(_gifEditorOriginalPath!) : 'optimized.gif';
+      final originalBytes =
+          _gifEditorOriginalPath != null ? await File(_gifEditorOriginalPath!).readAsBytes() : Uint8List(0);
+
+      gifEditorFile = LoadedFile(
+        name: originalName,
+        bytes: originalBytes,
+        isGif: true,
+        frames: outputFrames,
+      );
+
+      if (showToast) {
+        _showToast('GIF optimized OK');
+      }
+    } catch (e) {
+      debugPrint('Error processing GIF editor frames: $e');
+      _showToast('Gagal optimize GIF', isError: true);
+    } finally {
+      isGifEditorProcessing = false;
+      statusMessage = '';
+      notifyListeners();
+    }
+  }
+
+  Future<SaveResult> saveOptimizedGif({String? customName}) async {
+    final gif = gifEditorFile;
+    if (gif == null || gif.frames.isEmpty) {
+      return SaveResult(path: '', fileName: '');
+    }
+
+    isGifEditorProcessing = true;
+    statusMessage = 'Saving optimized GIF...';
+    notifyListeners();
+
+    try {
+      final encoded = await compute(
+        _encodeGifEditorIsolate,
+        _EncodeGifEditorArgs(gif.frames, gifEditorSettings),
+      );
+
+      if (encoded.isEmpty) {
+        _showToast('Gagal encode GIF', isError: true);
+        return SaveResult(path: '', fileName: '');
+      }
+
+      String outDirPath;
+      String baseName;
+
+      if (_gifEditorOriginalPath != null) {
+        outDirPath = _dirnamePath(_gifEditorOriginalPath!);
+        baseName = _basenameWithoutExt(_gifEditorOriginalPath!);
+      } else {
+        final fallback = await _getOutputDir();
+        outDirPath = fallback.path;
+        baseName = 'optimized';
+      }
+
+      final preferredName = (customName ?? '${baseName}_optimized').trim();
+      final safeName = preferredName.isEmpty
+          ? '${baseName}_optimized'
+          : preferredName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+
+      final outFile = File(_joinPath(outDirPath, '$safeName.gif'));
+      if (await outFile.exists()) {
+        await outFile.delete();
+      }
+      await outFile.writeAsBytes(encoded, flush: true);
+
+      _showToast('Save optimized GIF OK');
+      return SaveResult(
+        path: outFile.path,
+        fileName: _basenamePath(outFile.path),
+      );
+    } catch (e) {
+      debugPrint('Error saving optimized GIF: $e');
+      _showToast('Gagal save optimized GIF', isError: true);
+      return SaveResult(path: '', fileName: '');
+    } finally {
+      isGifEditorProcessing = false;
+      statusMessage = '';
+      notifyListeners();
+    }
   }
 
   Future<void> updateSettings(AppSettings newSettings, {String? changeDescription}) async {
@@ -442,6 +648,18 @@ List<img.Image> _processFramesBatchIsolate(_ProcessAllArgs args) {
       .toList();
 }
 
+class _ProcessGifEditorArgs {
+  final List<img.Image> sources;
+  final GifEditorSettings settings;
+  _ProcessGifEditorArgs(this.sources, this.settings);
+}
+
+List<img.Image> _processGifEditorFramesIsolate(_ProcessGifEditorArgs args) {
+  return args.sources
+      .map((src) => ImageProcessor.applyGifEditorSettings(src, args.settings))
+      .toList();
+}
+
 class _GenerateArgs {
   final List<ImageFrame> frames;
   final AppSettings settings;
@@ -461,6 +679,30 @@ class _LoadFileArgs {
 
 LoadedFile _loadFileIsolate(_LoadFileArgs args) {
   return ImageProcessor.loadFile(args.name, args.bytes);
+}
+
+class _DecodeGifEditorArgs {
+  final String name;
+  final Uint8List bytes;
+  _DecodeGifEditorArgs(this.name, this.bytes);
+}
+
+List<ImageFrame> _decodeGifEditorFramesIsolate(_DecodeGifEditorArgs args) {
+  return ImageProcessor.decodeGifFramesForEditor(
+    args.name,
+    args.bytes,
+    centerCrop: false,
+  );
+}
+
+class _EncodeGifEditorArgs {
+  final List<ImageFrame> frames;
+  final GifEditorSettings settings;
+  _EncodeGifEditorArgs(this.frames, this.settings);
+}
+
+Uint8List _encodeGifEditorIsolate(_EncodeGifEditorArgs args) {
+  return ImageProcessor.encodeGifLossy(args.frames, args.settings);
 }
 
 

@@ -45,6 +45,15 @@ enum AntiAliasMode {
   smart,
 }
 
+enum GifFillColor {
+  white,
+  black,
+}
+
+enum GifOptimizationMethod {
+  lossy,
+}
+
 class AppSettings {
   int canvasWidth;
   int canvasHeight;
@@ -129,17 +138,51 @@ class AppSettings {
   }
 }
 
+class GifEditorSettings {
+  bool centerCrop;
+  int targetSize;
+  GifFillColor fillColor;
+  GifOptimizationMethod optimizationMethod;
+  int compressionLevel;
+
+  GifEditorSettings({
+    this.centerCrop = true,
+    this.targetSize = 240,
+    this.fillColor = GifFillColor.black,
+    this.optimizationMethod = GifOptimizationMethod.lossy,
+    this.compressionLevel = 60,
+  });
+
+  GifEditorSettings copyWith({
+    bool? centerCrop,
+    int? targetSize,
+    GifFillColor? fillColor,
+    GifOptimizationMethod? optimizationMethod,
+    int? compressionLevel,
+  }) {
+    return GifEditorSettings(
+      centerCrop: centerCrop ?? this.centerCrop,
+      targetSize: targetSize ?? this.targetSize,
+      fillColor: fillColor ?? this.fillColor,
+      optimizationMethod: optimizationMethod ?? this.optimizationMethod,
+      compressionLevel: compressionLevel ?? this.compressionLevel,
+    );
+  }
+}
+
 class ImageFrame {
   final String name;
   final img.Image sourceImage;
   img.Image? processedImage;
   String glyph;
+  int frameDurationCs;
 
   ImageFrame({
     required this.name,
     required this.sourceImage,
     this.processedImage,
     this.glyph = '',
+    this.frameDurationCs = 8,
   });
 }
 

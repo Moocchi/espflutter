@@ -174,7 +174,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
         allowMultiple: true,
         withData: true,
         type: FileType.custom,
-        allowedExtensions: const ['bin', 'qoi'],
+        allowedExtensions: const ['bin', 'qoi', 'gif'],
         initialDirectory: _preferredInitialDirectory,
       );
       pickedFiles = result?.files;
@@ -214,7 +214,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
                     if (e is Directory) return true;
                     if (e is File) {
                       final path = e.path.toLowerCase();
-                      if (path.endsWith('.qoi') || path.endsWith('.bin')) return true;
+                      if (path.endsWith('.qoi') || path.endsWith('.bin') || path.endsWith('.gif')) return true;
                     }
                     return false;
                   })
@@ -243,7 +243,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
               child: AlertDialog(
                 backgroundColor: Colors.white,
                 surfaceTintColor: Colors.transparent,
-                title: const Text('Pilih File/Folder (.qoi/.bin)', style: TextStyle(color: Color(0xFF3F4670), fontSize: 18, fontWeight: FontWeight.bold)),
+                title: const Text('Pilih File/Folder (.qoi/.bin/.gif)', style: TextStyle(color: Color(0xFF3F4670), fontSize: 18, fontWeight: FontWeight.bold)),
                 content: SizedBox(
                 width: 460,
                 height: 420,
@@ -297,7 +297,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
                       child: entities.isEmpty
                           ? const Center(
                               child: Text(
-                                'Kosong atau tidak ada file QOI/BIN.',
+                                'Kosong atau tidak ada file QOI/BIN/GIF.',
                                 style: TextStyle(color: Color(0xFF5F6680)),
                               ),
                             )
@@ -402,7 +402,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
                                  if (f is File) {
                                    final fName = f.path.split('/').last;
                                    final ext = fName.split('.').last.toLowerCase();
-                                   if (ext == 'qoi' || ext == 'bin') {
+                                   if (ext == 'qoi' || ext == 'bin' || ext == 'gif') {
                                      result.add(PlatformFile(
                                        name: '$folderName/$fName',
                                        size: f.lengthSync(),
@@ -443,7 +443,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
     if (!mounted) return;
 
     if (files.isEmpty) {
-      _toast('Folder tidak berisi .qoi/.bin', isError: true);
+      _toast('Folder tidak berisi .qoi/.bin/.gif', isError: true);
       return;
     }
 
@@ -471,7 +471,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
 
     return FilePicker.platform.getDirectoryPath(
       initialDirectory: _preferredInitialDirectory,
-      dialogTitle: 'Pilih folder berisi .qoi/.bin',
+      dialogTitle: 'Pilih folder berisi .qoi/.bin/.gif',
     );
   }
 
@@ -494,7 +494,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
         builder: (ctx) => AlertDialog(
           title: const Text('Perlu Akses File'),
           content: const Text(
-            'Aplikasi membutuhkan izin untuk membaca dan mengupload media (.qoi/.bin) dari penyimpanan Anda.\n\n'
+            'Aplikasi membutuhkan izin untuk membaca dan mengupload media (.qoi/.bin/.gif) dari penyimpanan Anda.\n\n'
             'Silakan izinkan akses file di pengaturan aplikasi (Perizinan -> File dan media).',
           ),
           actions: [
@@ -649,7 +649,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
     final directory = Directory(folderPath);
     if (!await directory.exists()) return const [];
 
-    const allowedExt = {'qoi', 'bin'};
+    const allowedExt = {'qoi', 'bin', 'gif'};
     final List<PlatformFile> selected = [];
 
     await for (final entity in directory.list(recursive: false, followLinks: false)) {
@@ -796,7 +796,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
                   lines: [
                     '1) Di device ESP32 pilih menu Up Media sampai mode AP aktif.',
                     '2) Di HP sambungkan Wi-Fi ke SSID ESP32-Media-App (password 12345678).',
-                    '3) Upload bisa pilih file/folder berisi .qoi/.bin dari Download/image2cpp.',
+                    '3) Upload bisa pilih file/folder berisi .qoi/.bin/.gif dari Download/image2cpp.',
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -928,7 +928,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
                 const SizedBox(height: 10),
                 if (_selectedFiles.isEmpty)
                   const Text(
-                    'Belum ada file dipilih (.qoi/.bin).',
+                    'Belum ada file dipilih (.qoi/.bin/.gif).',
                     style: TextStyle(color: Color(0xFF5F6680), fontSize: 13),
                   )
                 else
@@ -953,7 +953,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
                 : _entries.isEmpty
                     ? Text(
                         _hasFetchedListOnce
-                            ? 'Storage ESP32 kosong. Upload file .qoi/.bin terlebih dahulu.'
+                          ? 'Storage ESP32 kosong. Upload file .qoi/.bin/.gif terlebih dahulu.'
                             : 'Belum ambil list. Tekan Test Connection dulu.',
                         style: const TextStyle(color: Color(0xFF5F6680), fontSize: 13),
                       )
@@ -1148,7 +1148,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
       for (var e in dir.listSync(recursive: true, followLinks: false)) {
         if (e is File) {
           final ext = e.path.split('.').last.toLowerCase();
-          if (ext == 'qoi' || ext == 'bin') {
+          if (ext == 'qoi' || ext == 'bin' || ext == 'gif') {
             total += e.lengthSync();
           }
         }

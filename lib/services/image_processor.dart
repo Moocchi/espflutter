@@ -20,7 +20,7 @@ class ImageProcessor {
     final List<ImageFrame> frames = [];
 
     if (isGif) {
-      frames.addAll(_decodeGifFrames(name, bytes));
+      frames.addAll(_decodeGifFrames(name, bytes, centerCropSquare: true));
     } else {
       final image = img.decodeImage(bytes);
       if (image != null) {
@@ -41,9 +41,21 @@ class ImageProcessor {
     );
   }
 
+  static List<ImageFrame> decodeGifFramesForEditor(
+    String name,
+    Uint8List bytes, {
+    required bool centerCrop,
+  }) {
+    return _decodeGifFrames(name, bytes, centerCropSquare: centerCrop);
+  }
+
   /// Decode GIF with manual frame compositing.
   /// Handles disposal methods, transparency, and delta frames correctly.
-  static List<ImageFrame> _decodeGifFrames(String name, Uint8List bytes) {
+  static List<ImageFrame> _decodeGifFrames(
+    String name,
+    Uint8List bytes, {
+    required bool centerCropSquare,
+  }) {
     final decoder = img.GifDecoder();
     final info = decoder.startDecode(bytes);
     if (info == null) return [];
@@ -101,7 +113,7 @@ class ImageProcessor {
       img.Image composited = img.Image.from(canvas);
 
       // Center-crop to 1:1 if not already square
-      if (canvasW != canvasH) {
+      if (centerCropSquare && canvasW != canvasH) {
         final cropSize = canvasW < canvasH ? canvasW : canvasH;
         final cropX = (canvasW - cropSize) ~/ 2;
         final cropY = (canvasH - cropSize) ~/ 2;
@@ -113,6 +125,7 @@ class ImageProcessor {
         name: name,
         sourceImage: composited,
         glyph: '${name.split('.').first}_frm${i.toString().padLeft(4, '0')}',
+        frameDurationCs: frameInfo.duration <= 0 ? 8 : frameInfo.duration,
       ));
 
       // Apply disposal method for the NEXT frame
@@ -262,6 +275,144 @@ class ImageProcessor {
     }
 
     return canvas;
+  }
+
+  static img.Image applyGifEditorSettings(
+      img.Image source, GifEditorSettings settings) {
+    img.Image working = source;
+
+    if (settings.centerCrop) {
+      final cropSize =
+          working.width < working.height ? working.width : working.height;
+      final cropX = (working.width - cropSize) ~/ 2;
+      final cropY = (working.height - cropSize) ~/ 2;
+      working = img.copyCrop(
+        working,
+        x: cropX,
+        y: cropY,
+        width: cropSize,
+        height: cropSize,
+      );
+      return img.copyResize(
+        working,
+        width: settings.targetSize,
+        height: settings.targetSize,
+        interpolation: img.Interpolation.cubic,
+      );
+    }
+
+    final canvas = img.Image(
+      width: settings.targetSize,
+      height: settings.targetSize,
+    );
+    final bg = settings.fillColor == GifFillColor.white
+        ? img.ColorRgb8(255, 255, 255)
+        : img.ColorRgb8(0, 0, 0);
+    img.fill(canvas, color: bg);
+
+    final ratioW = settings.targetSize / working.width;
+    final ratioH = settings.targetSize / working.height;
+    final ratio = ratioW < ratioH ? ratioW : ratioH;
+
+    final drawW = (working.width * ratio).round().clamp(1, settings.targetSize);
+    final drawH =
+        (working.height * ratio).round().clamp(1, settings.targetSize);
+
+    final resized = img.copyResize(
+      working,
+      width: drawW,
+      height: drawH,
+      interpolation: img.Interpolation.cubic,
+    );
+
+    final offsetX = (settings.targetSize - drawW) ~/ 2;
+    final offsetY = (settings.targetSize - drawH) ~/ 2;
+    img.compositeImage(canvas, resized, dstX: offsetX, dstY: offsetY);
+    return canvas;
+  }
+
+  static Uint8List encodeGifLossy(
+      List<ImageFrame> frames, GifEditorSettings settings) {
+    if (frames.isEmpty) return Uint8List(0);
+
+    final normalizedCompression = settings.compressionLevel.clamp(1, 100);
+    final qualityBias = 101 - normalizedCompression;
+
+    final mappedColors =
+        (16 + ((qualityBias - 1) * 240 / 99)).round().clamp(16, 256);
+    final mappedSampling =
+        (1 + ((normalizedCompression - 1) * 29 / 99)).round().clamp(1, 30);
+
+    final optimizedFrames = _mergeConsecutiveDuplicateFrames(frames);
+
+    final encoder = img.GifEncoder(
+      repeat: 0,
+      numColors: mappedColors,
+      quantizerType: img.QuantizerType.neural,
+      samplingFactor: mappedSampling,
+      dither: img.DitherKernel.none,
+    );
+
+    for (final frame in optimizedFrames) {
+      encoder.addFrame(
+        frame.sourceImage,
+        duration: frame.frameDurationCs.clamp(1, 65535),
+      );
+    }
+
+    return encoder.finish() ?? Uint8List(0);
+  }
+
+  static List<ImageFrame> _mergeConsecutiveDuplicateFrames(
+      List<ImageFrame> frames) {
+    if (frames.length <= 1) return List<ImageFrame>.from(frames);
+
+    final merged = <ImageFrame>[];
+
+    for (final frame in frames) {
+      if (merged.isEmpty) {
+        merged.add(ImageFrame(
+          name: frame.name,
+          sourceImage: frame.sourceImage,
+          glyph: frame.glyph,
+          frameDurationCs: frame.frameDurationCs,
+        ));
+        continue;
+      }
+
+      final last = merged.last;
+      if (_imagesAreEqual(last.sourceImage, frame.sourceImage)) {
+        final totalDuration = last.frameDurationCs + frame.frameDurationCs;
+        last.frameDurationCs = totalDuration > 65535 ? 65535 : totalDuration;
+      } else {
+        merged.add(ImageFrame(
+          name: frame.name,
+          sourceImage: frame.sourceImage,
+          glyph: frame.glyph,
+          frameDurationCs: frame.frameDurationCs,
+        ));
+      }
+    }
+
+    return merged;
+  }
+
+  static bool _imagesAreEqual(img.Image a, img.Image b) {
+    if (a.width != b.width || a.height != b.height) {
+      return false;
+    }
+
+    for (int y = 0; y < a.height; y++) {
+      for (int x = 0; x < a.width; x++) {
+        final pa = a.getPixel(x, y);
+        final pb = b.getPixel(x, y);
+        if (pa.r != pb.r || pa.g != pb.g || pa.b != pb.b || pa.a != pb.a) {
+          return false;
+        }
+      }
+    }
+
+    return true;
   }
 
   static img.Interpolation _mapInterpolation(AntiAliasMode mode) {
