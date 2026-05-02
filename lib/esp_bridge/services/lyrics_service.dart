@@ -52,22 +52,13 @@ class LyricsService {
 
     if (track.isEmpty || artist.isEmpty) return false;
 
-    // Bersihkan judul dan nama artis dari "sampah" metadata Apple Music
-    final normalizedTrack = _normalizeTrackTitle(track);
-    final normalizedArtist = _normalizeArtist(artist);
+    // Samakan logic pencarian dengan app lain: gunakan artis utama saja
+    final cleanArtist = artist.split(',').first.trim();
     final primaryKey = _makeCacheKey(track, artist);
-    final normalizedKey = _makeCacheKey(normalizedTrack, normalizedArtist);
 
     final cachedPrimary = _lyricsCache[primaryKey];
     if (cachedPrimary != null && cachedPrimary.isNotEmpty) {
       _lines = List<LyricLine>.from(cachedPrimary);
-      return true;
-    }
-
-    final cachedNormalized = _lyricsCache[normalizedKey];
-    if (cachedNormalized != null && cachedNormalized.isNotEmpty) {
-      _lines = List<LyricLine>.from(cachedNormalized);
-      _lyricsCache[primaryKey] = List<LyricLine>.from(cachedNormalized);
       return true;
     }
 
@@ -97,56 +88,21 @@ class LyricsService {
     while (maxRetries > 0) {
       try {
         // ── Langkah 1: Direct GET (dengan durasi jika ada, paling presisi) ──
-        final primary = await _fetchByGet(track: track, artist: artist, durationSec: durationSec);
-        if (primary) {
-          _saveCache(primaryKey);
-          _saveCache(normalizedKey);
-          return true;
+        bool found = false;
+        if (durationSec != null && durationSec > 0) {
+          found = await _fetchByGet(
+            track: track,
+            artist: cleanArtist,
+            durationSec: durationSec,
+          );
         }
 
-        // ── Langkah 2: Direct GET tanpa durasi (jika langkah 1 gagal karena durasi) ──
-        if (durationSec != null) {
-          final noDurGet = await _fetchByGet(track: track, artist: artist);
-          if (noDurGet) {
-            _saveCache(primaryKey);
-            _saveCache(normalizedKey);
-            return true;
-          }
+        // ── Langkah 2: Search dengan query (artist + title) ──
+        if (!found) {
+          found = await _fetchByQ(query: '$cleanArtist $track');
         }
 
-        // ── Langkah 3: Direct GET dengan nama yang di-normalize ──
-        if (normalizedTrack != track || normalizedArtist != artist) {
-          final normalized = await _fetchByGet(track: normalizedTrack, artist: normalizedArtist);
-          if (normalized) {
-            _saveCache(normalizedKey);
-            _saveCache(primaryKey);
-            return true;
-          }
-        }
-
-        // ── Langkah 4: Search TANPA durasi (search endpoint + durasi = bencana) ──
-        final searchResult = await _fetchBySearch(
-          track: normalizedTrack,
-          artist: normalizedArtist,
-        );
-        if (searchResult) {
-          _saveCache(normalizedKey);
-          _saveCache(primaryKey);
-          return true;
-        }
-
-        // ── Langkah 5: Q search TANPA durasi (paling fleksibel) ──
-        final qResult = await _fetchByQ(query: '$normalizedTrack $normalizedArtist');
-        if (qResult) {
-          _saveCache(normalizedKey);
-          _saveCache(primaryKey);
-          return true;
-        }
-
-        // ── Langkah 6: Q search hanya judul (artis bisa bikin rancu) ──
-        final qTrackOnly = await _fetchByQ(query: normalizedTrack);
-        if (qTrackOnly) {
-          _saveCache(normalizedKey);
+        if (found) {
           _saveCache(primaryKey);
           return true;
         }
