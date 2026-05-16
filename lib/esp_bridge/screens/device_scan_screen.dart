@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import '../../main.dart';
 import '../services/ble_service.dart';
 import '../services/system_media_service.dart';
 
@@ -128,39 +129,27 @@ class _DeviceScanScreenState extends State<DeviceScanScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final t = GanciTheme.of(context);
     return Scaffold(
-      backgroundColor: const Color(0xFFF3F2FF),
+      backgroundColor: t.bg,
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF3F2FF),
+        backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text(
-          'Cari Perangkat',
-          style: TextStyle(
-            color: Color(0xFF2F3445),
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        iconTheme: const IconThemeData(color: Color(0xFF5B6274)),
+        title: Text('Cari Perangkat', style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.bold, fontFamily: 'Inter')),
+        iconTheme: IconThemeData(color: t.textSecondary),
         actions: [
           if (_scanning)
-            const Padding(
-              padding: EdgeInsets.only(right: 16),
+            Padding(
+              padding: const EdgeInsets.only(right: 16),
               child: Center(
                 child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Color(0xFF6252E7),
-                  ),
+                  width: 20, height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: t.primary),
                 ),
               ),
             )
           else
-            IconButton(
-              icon: const Icon(Icons.refresh_rounded),
-              onPressed: _startScan,
-            ),
+            IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: _startScan),
         ],
       ),
       body: Column(
@@ -169,8 +158,8 @@ class _DeviceScanScreenState extends State<DeviceScanScreen> {
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: LinearProgressIndicator(
-                backgroundColor: const Color(0xFFD8D4FF),
-                color: const Color(0xFF6252E7),
+                backgroundColor: t.outlineVariant,
+                color: t.primary,
                 minHeight: 2,
               ),
             ),
@@ -180,24 +169,14 @@ class _DeviceScanScreenState extends State<DeviceScanScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(
-                          Icons.bluetooth_searching_rounded,
-                          size: 64,
-                          color: Color(0xFFD2CFFF),
-                        ),
+                        Icon(Icons.bluetooth_searching_rounded, size: 64, color: t.primaryLight.withOpacity(0.4)),
                         const SizedBox(height: 16),
-                        const Text(
-                          'Mencari perangkat ESP32...',
-                          style: TextStyle(color: Color(0xFF6D7385)),
-                        ),
+                        Text('Mencari perangkat ESP32...', style: TextStyle(color: t.textMuted, fontFamily: 'Inter')),
                       ],
                     ),
                   )
                 : ListView.builder(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     itemCount: _results.length,
                     itemBuilder: (ctx, i) {
                       final r = _results[i];
@@ -207,44 +186,24 @@ class _DeviceScanScreenState extends State<DeviceScanScreen> {
                           ? r.advertisementData.advName
                           : 'Unknown Device';
 
-                      return Card(
+                      return Container(
                         margin: const EdgeInsets.only(bottom: 12),
-                        color: const Color(0xFFFDFDFF),
-                        shape: RoundedRectangleBorder(
+                        decoration: BoxDecoration(
+                          color: t.surfaceContainer,
                           borderRadius: BorderRadius.circular(16),
-                          side: BorderSide(
-                            color: const Color(0xFF6252E7).withOpacity(0.45),
-                          ),
+                          border: Border.all(color: t.glassBorder),
+                          boxShadow: [BoxShadow(color: t.glassGlow, blurRadius: 16, offset: const Offset(0, 4))],
                         ),
                         child: ListTile(
                           contentPadding: const EdgeInsets.all(12),
                           onTap: () => _connect(r.device),
-                          leading: const CircleAvatar(
-                            backgroundColor: Color(0xFF6252E7),
-                            child: Icon(
-                              Icons.bluetooth_rounded,
-                              color: Colors.white,
-                            ),
+                          leading: CircleAvatar(
+                            backgroundColor: t.primary,
+                            child: const Icon(Icons.bluetooth_rounded, color: Colors.white),
                           ),
-                          title: Text(
-                            name,
-                            style: const TextStyle(
-                              color: Color(0xFF2F3445),
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          subtitle: Text(
-                            r.device.remoteId.toString(),
-                            style: const TextStyle(
-                              color: Color(0xFF6D7385),
-                              fontSize: 12,
-                            ),
-                          ),
-                          trailing: const Icon(
-                            Icons.arrow_forward_ios_rounded,
-                            size: 16,
-                            color: Color(0xFF6252E7),
-                          ),
+                          title: Text(name, style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.bold, fontFamily: 'Inter')),
+                          subtitle: Text(r.device.remoteId.toString(), style: TextStyle(color: t.textMuted, fontSize: 12, fontFamily: 'Inter')),
+                          trailing: Icon(Icons.arrow_forward_ios_rounded, size: 16, color: t.primary),
                         ),
                       );
                     },

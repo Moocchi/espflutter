@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../main.dart';
 
 class AppToast {
   static OverlayEntry? _current;
@@ -225,9 +226,9 @@ class _ToastWidgetState extends State<_ToastWidget>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 18, vertical: 14),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: GanciColors.surfaceContainerHigh,
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: const Color(0xFFE7E8EC)),
+                        border: Border.all(color: GanciColors.glassBorder),
                         boxShadow: [
                           BoxShadow(
                             color: Colors.black.withValues(alpha: 0.16),
@@ -243,7 +244,7 @@ class _ToastWidgetState extends State<_ToastWidget>
                             child: Text(
                               widget.message,
                               style: const TextStyle(
-                                color: Color(0xFF22252F),
+                                color: GanciColors.textPrimary,
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -260,7 +261,7 @@ class _ToastWidgetState extends State<_ToastWidget>
                               child: Text(
                                 widget.actionLabel!,
                                 style: const TextStyle(
-                                  color: Color(0xFF6252E7),
+                                  color: GanciColors.primaryLight,
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
                                 ),

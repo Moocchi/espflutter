@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../main.dart';
 import 'package:provider/provider.dart';
 import '../models/app_settings.dart';
 import '../providers/app_state.dart';
@@ -141,7 +142,7 @@ class _SettingsPanelState extends State<SettingsPanel> {
             }),
             const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 8),
-              child: Text('x', style: TextStyle(color: Color(0xFF4C42CF)))),
+              child: Text('x', style: TextStyle(color: GanciColors.primaryLight))),
             _numField(_hCtrl, _hFocus, 'Height', (v) {
               _applyHeight();
               FocusScope.of(context).unfocus(); // Close keyboard
@@ -149,7 +150,7 @@ class _SettingsPanelState extends State<SettingsPanel> {
             }),
             const Padding(
                 padding: EdgeInsets.only(left: 8),
-              child: Text('px', style: TextStyle(color: Color(0xFF6D7385)))),
+              child: Text('px', style: TextStyle(color: GanciColors.textMuted))),
           ],
         ),
         const SizedBox(height: 16),
@@ -263,7 +264,7 @@ class _SettingsPanelState extends State<SettingsPanel> {
         padding: const EdgeInsets.only(bottom: 6),
         child: Text(text,
             style: const TextStyle(
-                color: Color(0xFF6252E7),
+                color: GanciColors.primary,
                 fontWeight: FontWeight.bold,
             fontSize: 13)),
       );
@@ -276,24 +277,24 @@ class _SettingsPanelState extends State<SettingsPanel> {
           controller: ctrl,
           focusNode: focusNode,
           keyboardType: TextInputType.number,
-          style: const TextStyle(color: Color(0xFF2F3445), fontWeight: FontWeight.w600),
+          style: const TextStyle(color: GanciColors.textPrimary, fontWeight: FontWeight.w600),
           decoration: InputDecoration(
             labelText: label,
-          labelStyle: const TextStyle(color: Color(0xFF8E85ED), fontSize: 11),
+          labelStyle: const TextStyle(color: GanciColors.textMuted, fontSize: 11),
             isDense: true,
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             filled: true,
-          fillColor: const Color(0xFFF7F5FF),
+          fillColor: GanciColors.surfaceContainerHigh,
             border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Color(0xFFC9C3FF))),
+            borderSide: BorderSide(color: GanciColors.glassBorder)),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Color(0xFFC9C3FF))),
+            borderSide: BorderSide(color: GanciColors.glassBorder)),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Color(0xFF6252E7), width: 1.4)),
+            borderSide: BorderSide(color: GanciColors.primary, width: 1.4)),
           ),
           onSubmitted: onSubmitted,
           textInputAction: TextInputAction.done,
@@ -323,15 +324,15 @@ class _SettingsPanelState extends State<SettingsPanel> {
                         },
                         fillColor: WidgetStateProperty.resolveWith((states) {
                           if (states.contains(WidgetState.selected)) {
-                            return const Color(0xFF6252E7);
+                            return GanciColors.primary;
                           }
-                          return const Color(0xFFB4B9C8);
+                          return GanciColors.outlineVariant;
                         }),
                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
                       Text(labels[i],
                           style: const TextStyle(
-                              color: Color(0xFF474C5E), fontSize: 13, fontWeight: FontWeight.w500)),
+                              color: GanciColors.textSecondary, fontSize: 13, fontWeight: FontWeight.w500)),
                     ],
                   ),
                 )),
@@ -344,25 +345,25 @@ class _SettingsPanelState extends State<SettingsPanel> {
   }) =>
       DropdownButtonFormField<T>(
         value: value,
-        dropdownColor: Colors.white,
-        style: const TextStyle(color: Color(0xFF2F3445), fontWeight: FontWeight.w600),
+        dropdownColor: GanciColors.surfaceContainer,
+        style: const TextStyle(color: GanciColors.textPrimary, fontWeight: FontWeight.w600),
         decoration: InputDecoration(
           isDense: true,
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           filled: true,
-          fillColor: const Color(0xFFF7F5FF),
+          fillColor: GanciColors.surfaceContainerHigh,
           border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: Color(0xFFC9C3FF))),
+              borderSide: BorderSide(color: GanciColors.glassBorder)),
           enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: Color(0xFFC9C3FF))),
+              borderSide: BorderSide(color: GanciColors.glassBorder)),
           focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: Color(0xFF6252E7), width: 1.4)),
+              borderSide: BorderSide(color: GanciColors.primary, width: 1.4)),
         ),
-        iconEnabledColor: const Color(0xFF6252E7),
+        iconEnabledColor: GanciColors.primary,
         items: items,
         onChanged: onChanged,
       );
@@ -373,13 +374,13 @@ class _SettingsPanelState extends State<SettingsPanel> {
           Switch(
               value: value,
               onChanged: onChanged,
-              activeColor: const Color(0xFF6252E7),
-              activeTrackColor: const Color(0xFFC9C3FF),
-              inactiveThumbColor: const Color(0xFFB4B9C8),
-              inactiveTrackColor: const Color(0xFFE7E8F3)),
+              activeColor: GanciColors.primary,
+              activeTrackColor: GanciColors.glassBorder,
+              inactiveThumbColor: GanciColors.outlineVariant,
+              inactiveTrackColor: GanciColors.outlineVariant),
           const SizedBox(width: 8),
           Text(label,
-              style: const TextStyle(color: Color(0xFF474C5E), fontSize: 13, fontWeight: FontWeight.w500)),
+              style: const TextStyle(color: GanciColors.textSecondary, fontSize: 13, fontWeight: FontWeight.w500)),
         ],
       );
 
@@ -391,11 +392,11 @@ class _SettingsPanelState extends State<SettingsPanel> {
           Checkbox(
               value: value,
               onChanged: onChanged,
-              activeColor: const Color(0xFF6252E7),
-              checkColor: Colors.white,
-              side: const BorderSide(color: Color(0xFFB4B9C8))),
+              activeColor: GanciColors.primary,
+              checkColor: GanciColors.surfaceContainer,
+              side: BorderSide(color: GanciColors.outlineVariant)),
           Text(label,
-              style: const TextStyle(color: Color(0xFF474C5E), fontSize: 13, fontWeight: FontWeight.w500)),
+              style: const TextStyle(color: GanciColors.textSecondary, fontSize: 13, fontWeight: FontWeight.w500)),
         ],
       );
 }

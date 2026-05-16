@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../main.dart';
 import 'package:provider/provider.dart';
 import '../models/app_settings.dart';
 import '../providers/app_state.dart';
@@ -40,39 +41,39 @@ class _OutputPanelState extends State<OutputPanel> {
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFFFDFDFF),
-        title: const Text('Rename Output', style: TextStyle(color: Color(0xFF2F3445))),
+        backgroundColor: GanciColors.surfaceContainer,
+        title: const Text('Rename Output', style: TextStyle(color: GanciColors.textPrimary)),
         content: TextField(
           controller: controller,
           autofocus: true,
-          style: const TextStyle(color: Color(0xFF2F3445)),
+          style: const TextStyle(color: GanciColors.textPrimary),
           decoration: InputDecoration(
             hintText: 'Nama file/folder',
-            hintStyle: const TextStyle(color: Color(0xFF9AA0B3)),
+            hintStyle: TextStyle(color: GanciColors.textMuted),
             filled: true,
-            fillColor: const Color(0xFFF7F5FF),
+            fillColor: GanciColors.surfaceContainerHigh,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFFC9C3FF)),
+              borderSide: BorderSide(color: GanciColors.glassBorder),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFFC9C3FF)),
+              borderSide: BorderSide(color: GanciColors.glassBorder),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFF6252E7), width: 1.4),
+              borderSide: BorderSide(color: GanciColors.primary, width: 1.4),
             ),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Batal', style: TextStyle(color: Color(0xFF6D7385))),
+            child: const Text('Batal', style: TextStyle(color: GanciColors.textMuted)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Simpan', style: TextStyle(color: Color(0xFF6252E7))),
+            child: const Text('Simpan', style: TextStyle(color: GanciColors.primary)),
           ),
         ],
       ),
@@ -123,20 +124,20 @@ class _OutputPanelState extends State<OutputPanel> {
         Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: const Color(0xFFF7F5FF),
+            color: GanciColors.surfaceContainerHigh,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFFC9C3FF)),
+            border: Border.all(color: GanciColors.glassBorder),
           ),
           child: const Row(
             children: [
-              Icon(Icons.info_outline, color: Color(0xFF6252E7), size: 14),
+              Icon(Icons.info_outline, color: GanciColors.primary, size: 14),
               SizedBox(width: 8),
               Expanded(
                 child: Text(
                   'File disimpan di: Download/image2cpp/\n'
                   'GIF -> ada Subfolder untuk setiap frame',
                   style: TextStyle(
-                      color: Color(0xFF5C6377), fontSize: 11, height: 1.5),
+                      color: GanciColors.textMuted, fontSize: 11, height: 1.5),
                 ),
               ),
             ],
@@ -228,7 +229,7 @@ class _OutputPanelState extends State<OutputPanel> {
         child: Text(
           text,
           style: const TextStyle(
-            color: Color(0xFF6252E7),
+            color: GanciColors.primary,
             fontWeight: FontWeight.bold,
             fontSize: 12,
           ),
@@ -242,9 +243,9 @@ class _OutputPanelState extends State<OutputPanel> {
   }) =>
       DropdownButtonFormField<T>(
         value: value,
-        dropdownColor: Colors.white,
+        dropdownColor: GanciColors.surfaceContainer,
         style: const TextStyle(
-          color: Color(0xFF2F3445),
+          color: GanciColors.textPrimary,
           fontSize: 13,
           fontWeight: FontWeight.w600,
         ),
@@ -254,18 +255,18 @@ class _OutputPanelState extends State<OutputPanel> {
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
           filled: true,
-          fillColor: const Color(0xFFF7F5FF),
+          fillColor: GanciColors.surfaceContainerHigh,
           border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: Color(0xFFC9C3FF))),
+              borderSide: BorderSide(color: GanciColors.glassBorder)),
           enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: Color(0xFFC9C3FF))),
+              borderSide: BorderSide(color: GanciColors.glassBorder)),
           focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: Color(0xFF6252E7), width: 1.4)),
+              borderSide: BorderSide(color: GanciColors.primary, width: 1.4)),
         ),
-        iconEnabledColor: const Color(0xFF6252E7),
+        iconEnabledColor: GanciColors.primary,
         items: items,
         onChanged: onChanged,
       );
@@ -278,12 +279,12 @@ class _OutputPanelState extends State<OutputPanel> {
           Checkbox(
               value: value,
               onChanged: onChanged,
-              activeColor: const Color(0xFF6252E7),
-              checkColor: Colors.white,
-              side: const BorderSide(color: Color(0xFFB4B9C8))),
+              activeColor: GanciColors.primary,
+              checkColor: GanciColors.surfaceContainer,
+              side: BorderSide(color: GanciColors.outlineVariant)),
           Text(label,
                 style: const TextStyle(
-                  color: Color(0xFF474C5E),
+                  color: GanciColors.textSecondary,
                   fontSize: 12,
                   fontWeight: FontWeight.w500)),
         ],
@@ -307,13 +308,13 @@ class _OutputPanelState extends State<OutputPanel> {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: const Color(0xFF6252E7),
+                  color: GanciColors.primary,
                   width: 1.6,
                 ),
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [Color(0xFFF9F8FF), Color(0xFFF2F0FF)],
+                  colors: [GanciColors.surfaceContainer, GanciColors.surfaceContainerHigh],
                 ),
               ),
               child: Padding(
@@ -322,11 +323,11 @@ class _OutputPanelState extends State<OutputPanel> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(icon, size: 16, color: const Color(0xFF6252E7)),
+                    Icon(icon, size: 16, color: GanciColors.primary),
                     const SizedBox(width: 8),
                     Text(label,
                         style: const TextStyle(
-                            color: Color(0xFF6252E7),
+                            color: GanciColors.primary,
                             fontWeight: FontWeight.w700,
                             fontSize: 13)),
                   ],

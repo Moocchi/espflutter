@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../main.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
@@ -231,17 +232,16 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
             final canGoUp = currentDir.path != root.path;
 
             return Theme(
-              data: ThemeData.light().copyWith(
-                colorScheme: const ColorScheme.light(primary: Color(0xFF6252E7)),
+              data: Theme.of(context).copyWith(
                 checkboxTheme: CheckboxThemeData(
                   fillColor: WidgetStateProperty.resolveWith((states) {
-                    if (states.contains(WidgetState.selected)) return const Color(0xFF6252E7);
+                    if (states.contains(WidgetState.selected)) return Theme.of(context).colorScheme.primary;
                     return Colors.transparent;
                   }),
                 ),
               ),
               child: AlertDialog(
-                backgroundColor: Colors.white,
+                backgroundColor: Theme.of(context).dialogTheme.backgroundColor,
                 surfaceTintColor: Colors.transparent,
                 title: const Text('Pilih File/Folder (.qoi/.bin/.gif)', style: TextStyle(color: Color(0xFF3F4670), fontSize: 18, fontWeight: FontWeight.bold)),
                 content: SizedBox(
@@ -775,6 +775,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
 
   @override
   Widget build(BuildContext context) {
+    final t = GanciTheme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -804,16 +805,17 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF7F5FF),
+                    color: t.primary.withOpacity(0.08),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFC9C3FF)),
+                    border: Border.all(color: t.glassBorder),
                   ),
                   child: Text(
                     'Endpoint aktif: $_lastConnectedBase',
-                    style: const TextStyle(
-                      color: Color(0xFF4C42CF),
+                    style: TextStyle(
+                      color: t.primaryLight,
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
+                      fontFamily: 'Inter',
                     ),
                   ),
                 ),
@@ -825,10 +827,9 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
                     ElevatedButton.icon(
                       onPressed: _loadingStatus || _loadingList ? null : _refreshAll,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF6252E7),
+                        backgroundColor: t.primary,
                         foregroundColor: Colors.white,
-                        disabledBackgroundColor:
-                            const Color(0xFF6252E7).withValues(alpha: 0.75),
+                        disabledBackgroundColor: t.primary.withOpacity(0.75),
                         disabledForegroundColor: Colors.white,
                       ),
                       icon: _loadingStatus || _loadingList
@@ -864,9 +865,9 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
             title: 'Status ESP32',
             outlined: true,
             child: _status == null
-                ? const Text(
+                ? Text(
                     'Belum ambil status. Tekan Test Connection.',
-                    style: TextStyle(color: Color(0xFF5F6680), fontSize: 13),
+                    style: TextStyle(color: t.textMuted, fontSize: 13, fontFamily: 'Inter'),
                   )
                 : Wrap(
                     spacing: 10,
@@ -898,9 +899,10 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
                     ElevatedButton.icon(
                       onPressed: _uploading ? null : _pickFiles,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: const Color(0xFF6252E7),
-                        elevation: 1,
+                        backgroundColor: t.surfaceContainerHigh,
+                        foregroundColor: t.primaryLight,
+                        elevation: 0,
+                        side: BorderSide(color: t.glassBorder),
                       ),
                       icon: const Icon(Icons.attach_file_rounded),
                       label: const Text('Pilih File/Folder'),
@@ -908,10 +910,9 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
                     ElevatedButton.icon(
                       onPressed: _uploading ? null : _uploadSelected,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF6252E7),
+                        backgroundColor: t.primary,
                         foregroundColor: Colors.white,
-                        disabledBackgroundColor:
-                            const Color(0xFF6252E7).withValues(alpha: 0.75),
+                        disabledBackgroundColor: t.primary.withOpacity(0.75),
                         disabledForegroundColor: Colors.white,
                       ),
                       icon: _uploading
@@ -927,9 +928,9 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
                 ),
                 const SizedBox(height: 10),
                 if (_selectedFiles.isEmpty)
-                  const Text(
+                  Text(
                     'Belum ada file dipilih (.qoi/.bin/.gif).',
-                    style: TextStyle(color: Color(0xFF5F6680), fontSize: 13),
+                    style: TextStyle(color: t.textMuted, fontSize: 13, fontFamily: 'Inter'),
                   )
                 else
                   _buildPreviewExpandedUI(),
@@ -955,7 +956,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
                         _hasFetchedListOnce
                           ? 'Storage ESP32 kosong. Upload file .qoi/.bin/.gif terlebih dahulu.'
                             : 'Belum ambil list. Tekan Test Connection dulu.',
-                        style: const TextStyle(color: Color(0xFF5F6680), fontSize: 13),
+                        style: TextStyle(color: t.textMuted, fontSize: 13, fontFamily: 'Inter'),
                       )
                     : Column(
                         children: _entries
@@ -964,29 +965,19 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
                                 dense: true,
                                 contentPadding: EdgeInsets.zero,
                                 leading: Icon(
-                                  entry.isDir
-                                      ? Icons.folder_rounded
-                                      : Icons.insert_drive_file_rounded,
-                                  color: const Color(0xFF6252E7),
+                                  entry.isDir ? Icons.folder_rounded : Icons.insert_drive_file_rounded,
+                                  color: t.primary,
                                 ),
                                 title: Text(
                                   entry.name,
-                                  style: const TextStyle(
-                                    color: Color(0xFF3F4670),
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                  style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w600, fontFamily: 'Inter'),
                                 ),
                                 subtitle: Text(
-                                  entry.isDir
-                                      ? 'Directory'
-                                      : _formatBytes(entry.size),
-                                  style: const TextStyle(color: Color(0xFF5F6680)),
+                                  entry.isDir ? 'Directory' : _formatBytes(entry.size),
+                                  style: TextStyle(color: t.textMuted, fontFamily: 'Inter'),
                                 ),
                                 trailing: IconButton(
-                                  icon: const Icon(
-                                    Icons.delete_outline_rounded,
-                                    color: Color(0xFFB42318),
-                                  ),
+                                  icon: Icon(Icons.delete_outline_rounded, color: GanciColors.error),
                                   onPressed: () => _deleteEntry(entry),
                                 ),
                               ),
@@ -1004,9 +995,9 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Jika ada error atau masalah lainnya hubungi no di bawah ini:',
-                  style: TextStyle(color: Color(0xFF5F6680), fontSize: 13),
+                  style: TextStyle(color: t.textMuted, fontSize: 13, fontFamily: 'Inter'),
                 ),
                 const SizedBox(height: 12),
                 ElevatedButton.icon(
@@ -1042,6 +1033,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
   }
 
   Widget _buildPreviewExpandedUI() {
+    final t = GanciTheme.of(context);
     final Map<String, List<PlatformFile>> grouped = {};
     final List<PlatformFile> rootFiles = [];
 
@@ -1061,13 +1053,11 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('Antrean Upload (${_selectedFiles.length} file)', style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF3F4670), fontSize: 13)),
+            Text('Antrean Upload (${_selectedFiles.length} file)', style: TextStyle(fontWeight: FontWeight.w600, color: t.textPrimary, fontSize: 13, fontFamily: 'Inter')),
             TextButton.icon(
-              onPressed: () {
-                setState(() => _selectedFiles = []);
-              },
-              icon: const Icon(Icons.clear_all_rounded, size: 16, color: Color(0xFFB42318)),
-              label: const Text('Clear All', style: TextStyle(color: Color(0xFFB42318), fontSize: 13, fontWeight: FontWeight.w600)),
+              onPressed: () => setState(() => _selectedFiles = []),
+              icon: Icon(Icons.clear_all_rounded, size: 16, color: GanciColors.error),
+              label: Text('Clear All', style: TextStyle(color: GanciColors.error, fontSize: 13, fontWeight: FontWeight.w600)),
             ),
           ],
         ),
@@ -1077,22 +1067,19 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
               margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: BoxDecoration(
-                color: const Color(0xFFF7F5FF),
+                color: t.primary.withOpacity(0.08),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFC9C3FF)),
+                border: Border.all(color: t.glassBorder),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.folder_rounded, color: Color(0xFF6252E7), size: 18),
+                  Icon(Icons.folder_rounded, color: t.primary, size: 18),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      '${e.key} (${e.value.length} file)',
-                      style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF3F4670), fontSize: 13),
-                    ),
+                    child: Text('${e.key} (${e.value.length} file)', style: TextStyle(fontWeight: FontWeight.w600, color: t.textPrimary, fontSize: 13, fontFamily: 'Inter')),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close_rounded, size: 18, color: Color(0xFFB42318)),
+                    icon: Icon(Icons.close_rounded, size: 18, color: GanciColors.error),
                     constraints: const BoxConstraints(),
                     padding: EdgeInsets.zero,
                     onPressed: () {
@@ -1110,22 +1097,19 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
               margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: t.surfaceContainerHigh,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFE2E0EC)),
+                border: Border.all(color: t.outlineVariant),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.insert_drive_file_rounded, color: Color(0xFF5F6680), size: 18),
+                  Icon(Icons.insert_drive_file_rounded, color: t.textMuted, size: 18),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      '${f.name} (${_formatBytes(f.size)})',
-                      style: const TextStyle(fontSize: 13, color: Color(0xFF5F6680)),
-                    ),
+                    child: Text('${f.name} (${_formatBytes(f.size)})', style: TextStyle(fontSize: 13, color: t.textSecondary, fontFamily: 'Inter')),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close_rounded, size: 18, color: Color(0xFFB42318)),
+                    icon: Icon(Icons.close_rounded, size: 18, color: GanciColors.error),
                     constraints: const BoxConstraints(),
                     padding: EdgeInsets.zero,
                     onPressed: () {
@@ -1172,33 +1156,20 @@ class _MetricChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = GanciTheme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFF7F5FF),
+        color: t.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFC9C3FF)),
+        border: Border.all(color: t.glassBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xFF6D7385),
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+          Text(label, style: TextStyle(color: t.textMuted, fontSize: 11, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
           const SizedBox(height: 2),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Color(0xFF4C42CF),
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+          Text(value, style: TextStyle(color: t.primaryLight, fontSize: 13, fontWeight: FontWeight.w700, fontFamily: 'Inter')),
         ],
       ),
     );
@@ -1210,39 +1181,31 @@ class _GuideHeaderSection extends StatelessWidget {
   final VoidCallback? onMenuTap;
   final String title;
 
-  const _GuideHeaderSection({
-    required this.showMenuButton,
-    this.onMenuTap,
-    required this.title,
-  });
+  const _GuideHeaderSection({required this.showMenuButton, this.onMenuTap, required this.title});
 
   @override
   Widget build(BuildContext context) {
+    final t = GanciTheme.of(context);
     return Row(
       children: [
         if (showMenuButton)
-          IconButton(
-            onPressed: onMenuTap ?? () => Scaffold.of(context).openDrawer(),
-            icon: const Icon(Icons.menu_rounded),
-            color: const Color(0xFF5B6274),
+          Container(
+            decoration: BoxDecoration(
+              color: t.surfaceContainer,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: t.glassBorder),
+            ),
+            child: IconButton(
+              onPressed: onMenuTap ?? () => Scaffold.of(context).openDrawer(),
+              icon: const Icon(Icons.menu_rounded),
+              color: t.textSecondary,
+            ),
           )
         else
-          const Icon(Icons.menu_rounded, color: Color(0xFF5B6274)),
-        const SizedBox(width: 10),
+          Icon(Icons.menu_rounded, color: t.textMuted),
+        const SizedBox(width: 14),
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  color: Color(0xFF2F3445),
-                  fontSize: 28,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
+          child: Text(title, style: TextStyle(color: t.textPrimary, fontSize: 26, fontWeight: FontWeight.w700, fontFamily: 'Inter', letterSpacing: -0.3)),
         ),
       ],
     );
@@ -1254,31 +1217,17 @@ class _GuideStepCard extends StatelessWidget {
   final Widget child;
   final bool outlined;
 
-  const _GuideStepCard({
-    required this.title,
-    required this.child,
-    this.outlined = false,
-  });
+  const _GuideStepCard({required this.title, required this.child, this.outlined = false});
 
   @override
   Widget build(BuildContext context) {
-    final borderColor = outlined
-      ? const Color(0xFF6252E7).withValues(alpha: 0.32)
-        : const Color(0xFF1A3048);
+    final t = GanciTheme.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: outlined ? const Color(0xFFFDFDFF) : const Color(0xFF0E1E2E),
+        color: t.surfaceContainer,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: borderColor),
-        boxShadow: outlined
-            ? [
-                BoxShadow(
-                  color: const Color(0xFF6252E7).withValues(alpha: 0.08),
-                  blurRadius: 24,
-                  offset: const Offset(0, 10),
-                ),
-              ]
-            : null,
+        border: Border.all(color: t.glassBorder),
+        boxShadow: [BoxShadow(color: t.glassGlow, blurRadius: 24, offset: const Offset(0, 8))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1286,26 +1235,13 @@ class _GuideStepCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             decoration: BoxDecoration(
-              color: outlined ? const Color(0xFFF7F5FF) : Colors.transparent,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(18),
-                topRight: Radius.circular(18),
-              ),
-              border: Border(bottom: BorderSide(color: borderColor)),
+              color: t.primary.withOpacity(0.06),
+              borderRadius: const BorderRadius.only(topLeft: Radius.circular(18), topRight: Radius.circular(18)),
+              border: Border(bottom: BorderSide(color: t.glassBorder)),
             ),
-            child: Text(
-              title,
-              style: TextStyle(
-                color: outlined ? const Color(0xFF4C42CF) : Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+            child: Text(title, style: TextStyle(color: t.primaryLight, fontSize: 15, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
           ),
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: child,
-          ),
+          Padding(padding: const EdgeInsets.all(20), child: child),
         ],
       ),
     );
@@ -1325,15 +1261,10 @@ class _GuideTextBlock extends StatelessWidget {
           .map(
             (line) => Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                line,
-                style: const TextStyle(
-                  color: Color(0xFF5F6680),
-                  fontSize: 13,
-                  height: 1.45,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              child: Builder(builder: (context) {
+                final t = GanciTheme.of(context);
+                return Text(line, style: TextStyle(color: t.textSecondary, fontSize: 13, height: 1.45, fontWeight: FontWeight.w500, fontFamily: 'Inter'));
+              }),
             ),
           )
           .toList(),
@@ -1348,6 +1279,7 @@ class _GuideLabeledList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = GanciTheme.of(context);
     return Column(
       children: items
           .map(
@@ -1358,12 +1290,8 @@ class _GuideLabeledList extends StatelessWidget {
                 children: [
                   Container(
                     margin: const EdgeInsets.only(top: 6),
-                    width: 7,
-                    height: 7,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF6252E7),
-                      shape: BoxShape.circle,
-                    ),
+                    width: 7, height: 7,
+                    decoration: BoxDecoration(color: t.primary, shape: BoxShape.circle),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -1372,20 +1300,11 @@ class _GuideLabeledList extends StatelessWidget {
                         children: [
                           TextSpan(
                             text: '${item.title}: ',
-                            style: const TextStyle(
-                              color: Color(0xFF3F4670),
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13,
-                            ),
+                            style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w700, fontSize: 13, fontFamily: 'Inter'),
                           ),
                           TextSpan(
                             text: item.description,
-                            style: const TextStyle(
-                              color: Color(0xFF5F6680),
-                              fontWeight: FontWeight.w500,
-                              height: 1.45,
-                              fontSize: 13,
-                            ),
+                            style: TextStyle(color: t.textSecondary, fontWeight: FontWeight.w500, height: 1.45, fontSize: 13, fontFamily: 'Inter'),
                           ),
                         ],
                       ),

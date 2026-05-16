@@ -1,6 +1,7 @@
-﻿import 'dart:typed_data';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import '../main.dart';
 import 'package:image/image.dart' as img;
 
 /// Converts img.Image -> Flutter ui.Image for display
@@ -122,7 +123,7 @@ class _PreviewWidgetState extends State<PreviewWidget> {
           Row(
             children: [
               const Text('Frame:',
-                  style: TextStyle(color: Color(0xFF474C5E), fontSize: 12)),
+                  style: TextStyle(color: GanciColors.textSecondary, fontSize: 12)),
               const SizedBox(width: 8),
               Expanded(
                 child: Slider(
@@ -136,7 +137,7 @@ class _PreviewWidgetState extends State<PreviewWidget> {
               ),
               Text(
                 '$_currentFrame / ${frames.length - 1}',
-                style: const TextStyle(color: Color(0xFF6D7385), fontSize: 11),
+                style: const TextStyle(color: GanciColors.textMuted, fontSize: 11),
               ),
             ],
           ),
@@ -146,12 +147,12 @@ class _PreviewWidgetState extends State<PreviewWidget> {
           width: dispW,
           height: dispH,
           decoration: BoxDecoration(
-            border: Border.all(color: const Color(0xFF6252E7), width: 2),
+            border: Border.all(color: GanciColors.primary, width: 2),
             color: Colors.black,
           ),
           child: _currentUiImage == null
               ? const Center(
-                  child: CircularProgressIndicator(color: Color(0xFF6252E7)))
+                  child: CircularProgressIndicator(color: GanciColors.primary))
               : CustomPaint(
                   painter: ProcessedFramePainter(_currentUiImage),
                   size: Size(dispW, dispH),
@@ -160,7 +161,7 @@ class _PreviewWidgetState extends State<PreviewWidget> {
         const SizedBox(height: 4),
         Text(
           '${frame?.width ?? 0} x ${frame?.height ?? 0} px   |   Frame ${_currentFrame + 1} of ${frames.length}',
-          style: const TextStyle(color: Color(0xFF6D7385), fontSize: 10),
+          style: const TextStyle(color: GanciColors.textMuted, fontSize: 10),
         ),
       ],
     );

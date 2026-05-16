@@ -1,8 +1,11 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../main.dart';
 import '../models/app_settings.dart';
 import '../providers/app_state.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/glass_card.dart';
 import '../widgets/output_panel.dart';
 import '../widgets/preview_widget.dart';
 import '../widgets/settings_panel.dart';
@@ -97,7 +100,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 _espBridgeService.setUiBusy(false, holdMsAfterRelease: 240);
               }
             },
-            backgroundColor: const Color(0xFFF3F2FF),
+            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
             drawer: isDesktop
                 ? null
                 : _SidebarMenu(
@@ -119,7 +122,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         : SingleChildScrollView(
                             padding: const EdgeInsets.all(20),
                             child: _selectedTab == _MenuTab.home
-                                ? _HomeContent(showMenuButton: !isDesktop)
+                                ? _HomeContent(showMenuButton: !isDesktop, onNavigate: _selectTab)
                                 : _selectedTab == _MenuTab.imageConverter
                                     ? _ConverterContent(
                                         showMenuButton: !isDesktop,
@@ -145,26 +148,183 @@ class _HomeScreenState extends State<HomeScreen> {
 
 class _HomeContent extends StatelessWidget {
   final bool showMenuButton;
+  final ValueChanged<_MenuTab> onNavigate;
 
-  const _HomeContent({required this.showMenuButton});
+  const _HomeContent({required this.showMenuButton, required this.onNavigate});
 
   @override
   Widget build(BuildContext context) {
+    final t = GanciTheme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _HeaderSection(
-          showMenuButton: showMenuButton,
-          title: 'Hello, Daisy!',
-          subtitle: 'Have a nice day :)',
+        _HeaderSection(showMenuButton: showMenuButton, title: 'Ganci', subtitle: 'ESP32 Image Tools'),
+        const SizedBox(height: 24),
+        // Quick stats row
+        SizedBox(
+          height: 100,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: const [
+              _StatCard(icon: Icons.image_rounded, value: '1.2k', label: 'IMAGES CONVERTED', color: GanciColors.primary),
+              SizedBox(width: 12),
+              _StatCard(icon: Icons.gif_box_rounded, value: '450', label: 'GIFS PROCESSED', color: GanciColors.secondary),
+              SizedBox(width: 12),
+              _StatCard(icon: Icons.send_rounded, value: '890', label: 'FILES TRANSFERRED', color: GanciColors.warning),
+            ],
+          ),
         ),
-        const SizedBox(height: 16),
-        const _QuickFilters(),
-        const SizedBox(height: 18),
-        const _ProjectCarousel(),
-        const SizedBox(height: 18),
-        const _ProgressSection(),
+        const SizedBox(height: 24),
+        Text('Features', style: TextStyle(color: t.textPrimary, fontSize: 18, fontWeight: FontWeight.w700, fontFamily: 'Inter')),
+        const SizedBox(height: 14),
+        _buildFeatureGrid(context),
+        const SizedBox(height: 24),
+        Text('Recent Activity', style: TextStyle(color: t.textPrimary, fontSize: 18, fontWeight: FontWeight.w700, fontFamily: 'Inter')),
+        const SizedBox(height: 14),
+        _buildActivityList(),
       ],
+    );
+  }
+
+  Widget _buildFeatureGrid(BuildContext context) {
+    final items = [
+      _FeatureItem(Icons.image_rounded, 'Image Converter', 'Convert images to byte arrays for OLED/LCD', GanciColors.primaryContainer, _MenuTab.imageConverter),
+      _FeatureItem(Icons.gif_box_rounded, 'GIF Editor', 'Optimize & resize GIFs for ESP32 displays', GanciColors.secondary, _MenuTab.gifEditor),
+      _FeatureItem(Icons.wifi_tethering_rounded, 'AP Transfer', 'Send files via WiFi to your ESP32', GanciColors.warning, _MenuTab.apTransferGuide),
+      _FeatureItem(Icons.sensors_rounded, 'ESP Bridge', 'BLE media control & device manager', GanciColors.tertiary, _MenuTab.espBridge),
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cardWidth = (constraints.maxWidth - 12) / 2;
+        return Wrap(
+          spacing: 12, runSpacing: 12,
+          children: items.map((item) => SizedBox(
+            width: cardWidth.clamp(100.0, 400.0),
+            child: _FeatureCard(item: item, onTap: () => onNavigate(item.tab)),
+          )).toList(),
+        );
+      },
+    );
+  }
+
+  Widget _buildActivityList() {
+    final activities = [
+      ('Converted logo.png → 240x240 RGB565', '2 min ago', Icons.check_circle_rounded, GanciColors.secondary),
+      ('Transferred cat.gif to ESP32', '15 min ago', Icons.send_rounded, GanciColors.primary),
+      ('Optimized animation.gif (32 frames)', '1 hr ago', Icons.auto_fix_high_rounded, GanciColors.warning),
+    ];
+    return Builder(builder: (context) {
+      final t = GanciTheme.of(context);
+      return Column(
+        children: activities.map((a) => Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: t.surfaceContainer,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: t.glassBorder),
+          ),
+          child: Row(children: [
+            Container(
+              width: 36, height: 36,
+              decoration: BoxDecoration(color: a.$4.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
+              child: Icon(a.$3, size: 18, color: a.$4),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(a.$1, style: TextStyle(color: t.textPrimary, fontSize: 13, fontWeight: FontWeight.w500, fontFamily: 'Inter'), maxLines: 1, overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 2),
+              Text(a.$2, style: TextStyle(color: t.textMuted, fontSize: 11, fontFamily: 'Inter')),
+            ])),
+          ]),
+        )).toList(),
+      );
+    });
+  }
+}
+
+class _StatCard extends StatelessWidget {
+  final IconData icon;
+  final String value;
+  final String label;
+  final Color color;
+
+  const _StatCard({required this.icon, required this.value, required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = GanciTheme.of(context);
+    return Container(
+      width: 150, padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: t.surfaceContainer,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.2)),
+        boxShadow: [BoxShadow(color: color.withOpacity(0.06), blurRadius: 16)],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
+        Row(children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 6),
+          Text(value, style: TextStyle(color: t.textPrimary, fontSize: 22, fontWeight: FontWeight.w700, fontFamily: 'Inter')),
+        ]),
+        const SizedBox(height: 6),
+        Text(label, style: TextStyle(color: t.textMuted, fontSize: 9, fontWeight: FontWeight.w600, fontFamily: 'Inter', letterSpacing: 0.8)),
+      ]),
+    );
+  }
+}
+
+class _FeatureItem {
+  final IconData icon;
+  final String title;
+  final String desc;
+  final Color color;
+  final _MenuTab tab;
+  const _FeatureItem(this.icon, this.title, this.desc, this.color, this.tab);
+}
+
+class _FeatureCard extends StatelessWidget {
+  final _FeatureItem item;
+  final VoidCallback onTap;
+  const _FeatureCard({required this.item, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = GanciTheme.of(context);
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        splashColor: item.color.withOpacity(0.08),
+        highlightColor: item.color.withOpacity(0.04),
+        child: Ink(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: t.surfaceContainer,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: item.color.withOpacity(0.15)),
+            boxShadow: [BoxShadow(color: item.color.withOpacity(0.05), blurRadius: 12)],
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(color: item.color.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
+              child: Icon(item.icon, size: 22, color: item.color),
+            ),
+            const SizedBox(height: 12),
+            Text(item.title, style: TextStyle(color: t.textPrimary, fontSize: 14, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+            const SizedBox(height: 4),
+            Text(item.desc, style: TextStyle(color: t.textMuted, fontSize: 11, fontFamily: 'Inter'), maxLines: 2, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 8),
+            Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+              Icon(Icons.arrow_forward_rounded, size: 16, color: item.color),
+            ]),
+          ]),
+        ),
+      ),
     );
   }
 }
@@ -198,7 +358,7 @@ class _ConverterContent extends StatelessWidget {
               children: [
                 const Text(
                   'Supports PNG, JPG, BMP, and GIF (multi-frame).',
-                  style: TextStyle(color: Color(0xFF6252E7), fontSize: 12),
+                  style: TextStyle(color: GanciColors.primaryLight, fontSize: 12),
                 ),
                 const SizedBox(height: 14),
                 _PrimaryActionButton(
@@ -217,7 +377,7 @@ class _ConverterContent extends StatelessWidget {
                 else
                   const Text(
                     'No files selected',
-                    style: TextStyle(color: Color(0xFF8E85ED), fontSize: 12),
+                    style: TextStyle(color: GanciColors.textMuted, fontSize: 12),
                   ),
               ],
             ),
@@ -242,7 +402,7 @@ class _ConverterContent extends StatelessWidget {
                 ? _PreviewSection(loadedFiles: state.loadedFiles)
                 : const Text(
                     'No files selected',
-                    style: TextStyle(color: Color(0xFF8E85ED), fontSize: 12),
+                    style: TextStyle(color: GanciColors.textMuted, fontSize: 12),
                   ),
           ),
         ),
@@ -270,42 +430,42 @@ class _GifEditorContent extends StatelessWidget {
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFFFDFDFF),
+        backgroundColor: GanciColors.surfaceContainer,
         title: const Text(
           'Save Optimized GIF',
-          style: TextStyle(color: Color(0xFF2F3445)),
+          style: TextStyle(color: GanciColors.textPrimary),
         ),
         content: TextField(
           controller: controller,
           autofocus: true,
-          style: const TextStyle(color: Color(0xFF2F3445)),
+          style: const TextStyle(color: GanciColors.textPrimary),
           decoration: InputDecoration(
             hintText: 'Nama file .gif',
-            hintStyle: const TextStyle(color: Color(0xFF9AA0B3)),
+            hintStyle: TextStyle(color: GanciColors.textMuted),
             filled: true,
-            fillColor: const Color(0xFFF7F5FF),
+            fillColor: GanciColors.surfaceContainerHigh,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFFC9C3FF)),
+              borderSide: BorderSide(color: GanciColors.glassBorder),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFFC9C3FF)),
+              borderSide: BorderSide(color: GanciColors.glassBorder),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFF6252E7), width: 1.4),
+              borderSide: BorderSide(color: GanciColors.primary, width: 1.4),
             ),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Batal', style: TextStyle(color: Color(0xFF6D7385))),
+            child: const Text('Batal', style: TextStyle(color: GanciColors.textMuted)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Simpan', style: TextStyle(color: Color(0xFF6252E7))),
+            child: const Text('Simpan', style: TextStyle(color: GanciColors.primary)),
           ),
         ],
       ),
@@ -347,13 +507,13 @@ class _GifEditorContent extends StatelessWidget {
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF7F5FF),
+                      color: GanciColors.surfaceContainerHigh,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFC9C3FF)),
+                      border: Border.all(color: GanciColors.glassBorder),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.check_circle_rounded, color: Color(0xFF6252E7), size: 18),
+                        const Icon(Icons.check_circle_rounded, color: GanciColors.primary, size: 18),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -361,7 +521,7 @@ class _GifEditorContent extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              color: Color(0xFF6252E7),
+                              color: GanciColors.primary,
                               fontWeight: FontWeight.w700,
                               fontSize: 12,
                             ),
@@ -373,7 +533,7 @@ class _GifEditorContent extends StatelessWidget {
                 else
                   const Text(
                     'Belum ada GIF dipilih.',
-                    style: TextStyle(color: Color(0xFF8E85ED), fontSize: 12),
+                    style: TextStyle(color: GanciColors.textMuted, fontSize: 12),
                   ),
               ],
             ),
@@ -394,7 +554,7 @@ class _GifEditorContent extends StatelessWidget {
                       child: Text(
                         'Center Crop',
                         style: TextStyle(
-                          color: Color(0xFF3F4670),
+                          color: GanciColors.textPrimary,
                           fontWeight: FontWeight.w700,
                           fontSize: 13,
                         ),
@@ -402,7 +562,7 @@ class _GifEditorContent extends StatelessWidget {
                     ),
                     Switch(
                       value: settings.centerCrop,
-                      activeColor: const Color(0xFF6252E7),
+                      activeColor: GanciColors.primary,
                       onChanged: state.isGifEditorProcessing
                           ? null
                           : (value) {
@@ -418,14 +578,14 @@ class _GifEditorContent extends StatelessWidget {
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF7F5FF),
+                    color: GanciColors.surfaceContainerHigh,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFC9C3FF)),
+                    border: Border.all(color: GanciColors.glassBorder),
                   ),
                   child: const Text(
                     'Resize target: 240 x 240 px',
                     style: TextStyle(
-                      color: Color(0xFF4C42CF),
+                      color: GanciColors.primaryLight,
                       fontWeight: FontWeight.w700,
                       fontSize: 12,
                     ),
@@ -435,7 +595,7 @@ class _GifEditorContent extends StatelessWidget {
                 const Text(
                   'Fill Background',
                   style: TextStyle(
-                    color: Color(0xFF3F4670),
+                    color: GanciColors.textPrimary,
                     fontWeight: FontWeight.w700,
                     fontSize: 13,
                   ),
@@ -476,7 +636,7 @@ class _GifEditorContent extends StatelessWidget {
                 const Text(
                   'Optimization Method',
                   style: TextStyle(
-                    color: Color(0xFF3F4670),
+                    color: GanciColors.textPrimary,
                     fontWeight: FontWeight.w700,
                     fontSize: 13,
                   ),
@@ -489,18 +649,18 @@ class _GifEditorContent extends StatelessWidget {
                     isDense: true,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                     filled: true,
-                    fillColor: const Color(0xFFF7F5FF),
+                    fillColor: GanciColors.surfaceContainerHigh,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFC9C3FF)),
+                      borderSide: BorderSide(color: GanciColors.glassBorder),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFFC9C3FF)),
+                      borderSide: BorderSide(color: GanciColors.glassBorder),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xFF6252E7), width: 1.4),
+                      borderSide: BorderSide(color: GanciColors.primary, width: 1.4),
                     ),
                   ),
                   items: const [
@@ -526,7 +686,7 @@ class _GifEditorContent extends StatelessWidget {
                       child: Text(
                         'Compression',
                         style: TextStyle(
-                          color: Color(0xFF3F4670),
+                          color: GanciColors.textPrimary,
                           fontWeight: FontWeight.w700,
                           fontSize: 13,
                         ),
@@ -535,14 +695,14 @@ class _GifEditorContent extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF7F5FF),
+                        color: GanciColors.surfaceContainerHigh,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFC9C3FF)),
+                        border: Border.all(color: GanciColors.glassBorder),
                       ),
                       child: Text(
                         '${settings.compressionLevel}',
                         style: const TextStyle(
-                          color: Color(0xFF4C42CF),
+                          color: GanciColors.primaryLight,
                           fontWeight: FontWeight.w700,
                           fontSize: 12,
                         ),
@@ -552,10 +712,10 @@ class _GifEditorContent extends StatelessWidget {
                 ),
                 SliderTheme(
                   data: SliderTheme.of(context).copyWith(
-                    activeTrackColor: const Color(0xFF6252E7),
-                    inactiveTrackColor: const Color(0xFFD4D1FF),
-                    thumbColor: const Color(0xFF6252E7),
-                    overlayColor: const Color(0xFF6252E7).withOpacity(0.12),
+                    activeTrackColor: GanciColors.primary,
+                    inactiveTrackColor: GanciColors.outlineVariant,
+                    thumbColor: GanciColors.primary,
+                    overlayColor: GanciColors.primary.withOpacity(0.12),
                   ),
                   child: Slider(
                     min: 1,
@@ -636,10 +796,10 @@ class _GifEditorContent extends StatelessWidget {
                               }
                             },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF6252E7),
+                        backgroundColor: GanciColors.primary,
                         foregroundColor: Colors.white,
                         disabledBackgroundColor:
-                            const Color(0xFF6252E7).withOpacity(0.65),
+                            GanciColors.primary.withOpacity(0.65),
                         disabledForegroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(
@@ -684,7 +844,7 @@ class _GifEditorContent extends StatelessWidget {
                 )
                 : const Text(
                     'Pilih GIF terlebih dahulu untuk melihat preview.',
-                    style: TextStyle(color: Color(0xFF8E85ED), fontSize: 12),
+                    style: TextStyle(color: GanciColors.textMuted, fontSize: 12),
                   ),
           ),
         ),
@@ -718,46 +878,36 @@ class _HeaderSection extends StatelessWidget {
   final String title;
   final String subtitle;
 
-  const _HeaderSection({
-    required this.showMenuButton,
-    required this.title,
-    required this.subtitle,
-  });
+  const _HeaderSection({required this.showMenuButton, required this.title, required this.subtitle});
 
   @override
   Widget build(BuildContext context) {
+    final t = GanciTheme.of(context);
     return Row(
       children: [
         if (showMenuButton)
-          IconButton(
-            onPressed: () => Scaffold.of(context).openDrawer(),
-            icon: const Icon(Icons.menu_rounded),
-            color: const Color(0xFF5B6274),
+          Container(
+            decoration: BoxDecoration(
+              color: t.surfaceContainer,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: t.glassBorder),
+            ),
+            child: IconButton(
+              onPressed: () => Scaffold.of(context).openDrawer(),
+              icon: const Icon(Icons.menu_rounded),
+              color: t.textSecondary,
+            ),
           )
         else
-          const Icon(Icons.menu_rounded, color: Color(0xFF5B6274)),
-        const SizedBox(width: 10),
+          Icon(Icons.menu_rounded, color: t.textMuted),
+        const SizedBox(width: 14),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                title,
-                style: TextStyle(
-                  color: Color(0xFF2F3445),
-                  fontSize: 28,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: TextStyle(
-                  color: Color(0xFF8A90A2),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              Text(title, style: TextStyle(color: t.textPrimary, fontSize: 26, fontWeight: FontWeight.w700, fontFamily: 'Inter', letterSpacing: -0.3)),
+              const SizedBox(height: 4),
+              Text(subtitle, style: TextStyle(color: t.textMuted, fontSize: 13, fontWeight: FontWeight.w500, fontFamily: 'Inter')),
             ],
           ),
         ),
@@ -766,200 +916,6 @@ class _HeaderSection extends StatelessWidget {
   }
 }
 
-class _QuickFilters extends StatelessWidget {
-  const _QuickFilters();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Wrap(
-      spacing: 8,
-      children: [
-        _FilterChip(label: 'My tasks', active: true),
-        _FilterChip(label: 'Project'),
-        _FilterChip(label: 'Team'),
-      ],
-    );
-  }
-}
-
-class _FilterChip extends StatelessWidget {
-  final String label;
-  final bool active;
-
-  const _FilterChip({required this.label, this.active = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: active ? const Color(0xFFDCD9FF) : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: active ? const Color(0xFF5853D2) : const Color(0xFF8A90A2),
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-}
-
-class _ProjectCarousel extends StatelessWidget {
-  const _ProjectCarousel();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 178,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        children: const [
-          _ProjectCard(
-            title: 'Back End\nDevelopment',
-            month: 'October 2020',
-          ),
-          SizedBox(width: 14),
-          _ProjectCard(
-            title: 'UI Design',
-            month: 'November 2020',
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ProjectCard extends StatelessWidget {
-  final String title;
-  final String month;
-
-  const _ProjectCard({required this.title, required this.month});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 190,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF6457E9), Color(0xFF5A44E0)],
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 26,
-            height: 26,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.22),
-              borderRadius: BorderRadius.circular(7),
-            ),
-            child: const Icon(Icons.person_outline, size: 16, color: Colors.white),
-          ),
-          const SizedBox(height: 18),
-          Text(
-            title,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              height: 1.2,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const Spacer(),
-          Text(
-            month,
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.75),
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ProgressSection extends StatelessWidget {
-  const _ProgressSection();
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Progress',
-          style: TextStyle(
-            color: Color(0xFF2F3445),
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x18000000),
-                blurRadius: 14,
-                offset: Offset(0, 8),
-              ),
-            ],
-          ),
-          child: const Row(
-            children: [
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: Color(0xFF6252E7),
-                child: Icon(Icons.lock_outline, size: 18, color: Colors.white),
-              ),
-              SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Project Name Here',
-                      style: TextStyle(
-                        color: Color(0xFF2F3445),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      '3 Days Left',
-                      style: TextStyle(
-                        color: Color(0xFF9AA0B3),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.more_vert, color: Color(0xFF9AA0B3), size: 20),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
 
 class _SidebarMenu extends StatelessWidget {
   final _MenuTab selectedTab;
@@ -989,58 +945,111 @@ class _SidebarMenu extends StatelessWidget {
       onSelected(tab);
     }
 
+    final t = GanciTheme.of(context);
     final content = Container(
-      width: 160,
-      color: Colors.white,
+      width: 200,
+      decoration: BoxDecoration(
+        color: t.surfaceContainer,
+        border: Border(right: BorderSide(color: t.glassBorder)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 20),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 18),
-            child: Text(
-              'Menu',
-              style: TextStyle(
-                color: Color(0xFF9AA0B3),
-                fontWeight: FontWeight.w700,
-              ),
+          const SizedBox(height: 24),
+          // Brand header
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                Container(
+                  width: 36, height: 36,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(10),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft, end: Alignment.bottomRight,
+                      colors: [t.primary, t.primaryContainer],
+                    ),
+                    boxShadow: [BoxShadow(color: t.primary.withOpacity(0.3), blurRadius: 12)],
+                  ),
+                  child: const Icon(Icons.diamond_rounded, size: 20, color: Colors.white),
+                ),
+                const SizedBox(width: 12),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Ganci', style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w700, fontSize: 18, fontFamily: 'Inter')),
+                    Text('v1.0.0', style: TextStyle(color: t.textMuted.withOpacity(0.6), fontSize: 11, fontFamily: 'Inter')),
+                  ],
+                ),
+              ],
             ),
           ),
+          const SizedBox(height: 28),
+          // Main menu section
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Text('MAIN MENU', style: TextStyle(color: t.textMuted.withOpacity(0.5), fontWeight: FontWeight.w600, fontSize: 10, fontFamily: 'Inter', letterSpacing: 1.2)),
+          ),
           const SizedBox(height: 12),
-          _NavTile(
-            icon: Icons.home_rounded,
-            label: 'Home',
-            isActive: selectedTab == _MenuTab.home,
-            onTap: () => handleSelect(_MenuTab.home),
+          _NavTile(icon: Icons.home_rounded, label: 'Home', isActive: selectedTab == _MenuTab.home, onTap: () => handleSelect(_MenuTab.home)),
+          const SizedBox(height: 4),
+          _NavTile(icon: Icons.image_rounded, label: 'Image Converter', isActive: selectedTab == _MenuTab.imageConverter, onTap: () => handleSelect(_MenuTab.imageConverter)),
+          const SizedBox(height: 4),
+          _NavTile(icon: Icons.gif_box_rounded, label: 'GIF Editor', isActive: selectedTab == _MenuTab.gifEditor, onTap: () => handleSelect(_MenuTab.gifEditor)),
+          const SizedBox(height: 4),
+          _NavTile(icon: Icons.wifi_tethering_rounded, label: 'AP Transfer', isActive: selectedTab == _MenuTab.apTransferGuide, onTap: () => handleSelect(_MenuTab.apTransferGuide)),
+          const SizedBox(height: 4),
+          _NavTile(icon: Icons.sensors_rounded, label: 'ESP Bridge', isActive: selectedTab == _MenuTab.espBridge, onTap: () => handleSelect(_MenuTab.espBridge)),
+          const Spacer(),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Text('TOOLS', style: TextStyle(color: t.textMuted.withOpacity(0.5), fontWeight: FontWeight.w600, fontSize: 10, fontFamily: 'Inter', letterSpacing: 1.2)),
           ),
           const SizedBox(height: 8),
-          _NavTile(
-            icon: Icons.image_rounded,
-            label: 'Image Converter',
-            isActive: selectedTab == _MenuTab.imageConverter,
-            onTap: () => handleSelect(_MenuTab.imageConverter),
+          _NavTile(icon: Icons.settings_rounded, label: 'Settings', isActive: false, onTap: () {}),
+          _NavTile(icon: Icons.info_outline_rounded, label: 'About', isActive: false, onTap: () {}),
+          const SizedBox(height: 12),
+          // Theme toggle — clean compact row
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Consumer<ThemeProvider>(
+              builder: (context, tp, _) {
+                return Material(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => tp.toggle(),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: t.primary.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: t.glassBorder),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            tp.isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
+                            size: 18, color: t.primaryLight,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              tp.isDark ? 'Dark Mode' : 'Light Mode',
+                              style: TextStyle(fontSize: 12, color: t.textSecondary, fontFamily: 'Inter', fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          Icon(Icons.swap_horiz_rounded, size: 16, color: t.textMuted),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
           ),
-          const SizedBox(height: 8),
-          _NavTile(
-            icon: Icons.gif_box_rounded,
-            label: 'Gif Editor',
-            isActive: selectedTab == _MenuTab.gifEditor,
-            onTap: () => handleSelect(_MenuTab.gifEditor),
-          ),
-          const SizedBox(height: 8),
-          _NavTile(
-            icon: Icons.wifi_tethering_rounded,
-            label: 'AP Transfer',
-            isActive: selectedTab == _MenuTab.apTransferGuide,
-            onTap: () => handleSelect(_MenuTab.apTransferGuide),
-          ),
-          const SizedBox(height: 8),
-          _NavTile(
-            icon: Icons.sensors_rounded,
-            label: 'ESP Bridge',
-            isActive: selectedTab == _MenuTab.espBridge,
-            onTap: () => handleSelect(_MenuTab.espBridge),
-          ),
+          const SizedBox(height: 20),
         ],
       ),
     );
@@ -1048,8 +1057,8 @@ class _SidebarMenu extends StatelessWidget {
     final hasDrawer = Scaffold.maybeOf(context)?.hasDrawer ?? false;
     if (hasDrawer) {
       return Drawer(
-        width: 160,
-        backgroundColor: Colors.white,
+        width: 200,
+        backgroundColor: t.surfaceContainer,
         shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
         child: content,
       );
@@ -1064,51 +1073,38 @@ class _NavTile extends StatelessWidget {
   final bool isActive;
   final VoidCallback onTap;
 
-  const _NavTile({
-    required this.icon,
-    required this.label,
-    required this.isActive,
-    required this.onTap,
-  });
+  const _NavTile({required this.icon, required this.label, required this.isActive, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
+    final t = GanciTheme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      child: InkWell(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Material(
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          decoration: BoxDecoration(
-            color: isActive ? const Color(0xFFE6E2FF) : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                icon,
-                size: 20,
-                color:
-                    isActive ? const Color(0xFF6252E7) : const Color(0xFF9BA2B4),
-              ),
-              const SizedBox(width: 10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          splashColor: t.primary.withOpacity(0.1),
+          highlightColor: t.primary.withOpacity(0.05),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: isActive ? t.primary.withOpacity(0.15) : Colors.transparent,
+              border: isActive ? Border.all(color: t.primary.withOpacity(0.25)) : null,
+            ),
+            child: Row(children: [
+              Icon(icon, size: 20, color: isActive ? t.primaryLight : t.textMuted),
+              const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: isActive
-                        ? const Color(0xFF6252E7)
-                        : const Color(0xFF6D7385),
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                ),
+                child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: isActive ? t.primaryLight : t.textSecondary, fontWeight: isActive ? FontWeight.w600 : FontWeight.w500, fontSize: 13, fontFamily: 'Inter')),
               ),
-            ],
+            ]),
           ),
         ),
       ),
@@ -1121,31 +1117,17 @@ class _StepCard extends StatelessWidget {
   final Widget child;
   final bool outlined;
 
-  const _StepCard({
-    required this.title,
-    required this.child,
-    this.outlined = false,
-  });
+  const _StepCard({required this.title, required this.child, this.outlined = false});
 
   @override
   Widget build(BuildContext context) {
-    final borderColor = outlined
-        ? const Color(0xFF6252E7).withOpacity(0.32)
-        : const Color(0xFF1A3048);
+    final t = GanciTheme.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: outlined ? const Color(0xFFFDFDFF) : const Color(0xFF0E1E2E),
+        color: t.surfaceContainer,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: borderColor),
-        boxShadow: outlined
-            ? [
-                BoxShadow(
-                  color: const Color(0xFF6252E7).withOpacity(0.08),
-                  blurRadius: 24,
-                  offset: const Offset(0, 10),
-                ),
-              ]
-            : null,
+        border: Border.all(color: t.glassBorder),
+        boxShadow: [BoxShadow(color: t.glassGlow, blurRadius: 24, offset: const Offset(0, 8))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1153,26 +1135,13 @@ class _StepCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             decoration: BoxDecoration(
-              color: outlined ? const Color(0xFFF7F5FF) : Colors.transparent,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(18),
-                topRight: Radius.circular(18),
-              ),
-              border: Border(bottom: BorderSide(color: borderColor)),
+              color: t.primary.withOpacity(0.06),
+              borderRadius: const BorderRadius.only(topLeft: Radius.circular(18), topRight: Radius.circular(18)),
+              border: Border(bottom: BorderSide(color: t.glassBorder)),
             ),
-            child: Text(
-              title,
-              style: TextStyle(
-                color: outlined ? const Color(0xFF4C42CF) : Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+            child: Text(title, style: TextStyle(color: t.primaryLight, fontSize: 15, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
           ),
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: child,
-          ),
+          Padding(padding: const EdgeInsets.all(20), child: child),
         ],
       ),
     );
@@ -1186,10 +1155,11 @@ class _PreviewSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = GanciTheme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: loadedFiles.map((file) {
-        final processedFrames = file.frames.map((frame) => frame.processedImage).toList();
+        final processedFrames = file.frames.map((f) => f.processedImage).toList();
         return Padding(
           padding: const EdgeInsets.only(bottom: 18),
           child: Column(
@@ -1199,34 +1169,19 @@ class _PreviewSection extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF7F5FF),
+                        color: t.surfaceContainerHigh,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFC9C3FF)),
+                        border: Border.all(color: t.glassBorder),
                       ),
                       child: Row(
                         children: [
-                          Icon(
-                            file.isGif
-                                ? Icons.gif_box_outlined
-                                : Icons.image_outlined,
-                            color: const Color(0xFF6252E7),
-                            size: 16,
-                          ),
+                          Icon(file.isGif ? Icons.gif_box_outlined : Icons.image_outlined, color: t.primary, size: 16),
                           const SizedBox(width: 8),
                           Expanded(
-                            child: Text(
-                              file.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFF6252E7),
-                                fontWeight: FontWeight.w700,
-                                fontSize: 12,
-                              ),
-                            ),
+                            child: Text(file.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: t.primary, fontWeight: FontWeight.w700, fontSize: 12, fontFamily: 'Inter')),
                           ),
                         ],
                       ),
@@ -1252,42 +1207,21 @@ class _FileCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final t = GanciTheme.of(context);
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFF7F5FF),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF6252E7), width: 1.6),
+        color: t.primary.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: t.primary.withOpacity(0.3), width: 1.4),
       ),
-      child: Row(
-        children: [
-          Icon(
-            file.isGif ? Icons.gif_box_outlined : Icons.image_outlined,
-            color: const Color(0xFF6252E7),
-            size: 18,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              file.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Color(0xFF6252E7),
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close, color: Color(0xFF6252E7), size: 18),
-            onPressed: onRemove,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          ),
-        ],
-      ),
+      child: Row(children: [
+        Icon(file.isGif ? Icons.gif_box_outlined : Icons.image_outlined, color: t.primaryLight, size: 18),
+        const SizedBox(width: 10),
+        Expanded(child: Text(file.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: t.primaryLight, fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'Inter'))),
+        IconButton(icon: Icon(Icons.close, color: t.primaryLight.withOpacity(0.7), size: 18), onPressed: onRemove, padding: EdgeInsets.zero, constraints: const BoxConstraints(minWidth: 32, minHeight: 32)),
+      ]),
     );
   }
 }
@@ -1297,14 +1231,11 @@ class _SelectionPill extends StatelessWidget {
   final String label;
   final VoidCallback? onTap;
 
-  const _SelectionPill({
-    required this.active,
-    required this.label,
-    required this.onTap,
-  });
+  const _SelectionPill({required this.active, required this.label, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
+    final t = GanciTheme.of(context);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
@@ -1312,22 +1243,12 @@ class _SelectionPill extends StatelessWidget {
         duration: const Duration(milliseconds: 140),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: active ? const Color(0xFFE8E4FF) : const Color(0xFFF7F5FF),
+          color: active ? t.primary.withOpacity(0.15) : t.surfaceContainerHigh,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: active ? const Color(0xFF6252E7) : const Color(0xFFC9C3FF),
-            width: active ? 1.4 : 1,
-          ),
+          border: Border.all(color: active ? t.primary : t.outlineVariant, width: active ? 1.4 : 1),
         ),
         child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              color: active ? const Color(0xFF4C42CF) : const Color(0xFF5F6680),
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+          child: Text(label, style: TextStyle(color: active ? t.primaryLight : t.textMuted, fontSize: 12, fontWeight: FontWeight.w700, fontFamily: 'Inter')),
         ),
       ),
     );
@@ -1339,51 +1260,33 @@ class _PrimaryActionButton extends StatelessWidget {
   final String label;
   final VoidCallback? onTap;
 
-  const _PrimaryActionButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
+  const _PrimaryActionButton({required this.icon, required this.label, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
+    final t = GanciTheme.of(context);
     return Material(
       color: Colors.transparent,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(14),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
+        splashColor: t.primary.withOpacity(0.12),
         child: Ink(
           decoration: BoxDecoration(
-            color: const Color(0xFFF7F5FF),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: onTap == null
-                  ? const Color(0xFF6252E7).withOpacity(0.35)
-                  : const Color(0xFF6252E7),
-              width: 1.8,
+            borderRadius: BorderRadius.circular(14),
+            gradient: LinearGradient(
+              colors: [t.primary.withOpacity(onTap == null ? 0.2 : 0.15), t.primary.withOpacity(onTap == null ? 0.1 : 0.08)],
             ),
+            border: Border.all(color: onTap == null ? t.primary.withOpacity(0.2) : t.primary.withOpacity(0.5), width: 1.5),
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, color: const Color(0xFF6252E7), size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: onTap == null
-                        ? const Color(0xFF6252E7).withOpacity(0.65)
-                        : const Color(0xFF6252E7),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                    letterSpacing: 0.2,
-                  ),
-                ),
-              ],
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(icon, color: onTap == null ? t.primary.withOpacity(0.5) : t.primaryLight, size: 20),
+              const SizedBox(width: 10),
+              Text(label, style: TextStyle(color: onTap == null ? t.primaryLight.withOpacity(0.5) : t.primaryLight, fontWeight: FontWeight.w600, fontSize: 14, fontFamily: 'Inter')),
+            ]),
           ),
         ),
       ),
