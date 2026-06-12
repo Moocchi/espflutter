@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
@@ -11,6 +12,33 @@ import '../services/image_processor.dart';
 import '../services/qoi_encoder.dart';
 
 class AppState extends ChangeNotifier {
+  AppState() {
+    _loadStats();
+  }
+
+  Future<void> _loadStats() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      imagesConvertedCount = prefs.getInt('imagesConvertedCount') ?? 0;
+      gifsProcessedCount = prefs.getInt('gifsProcessedCount') ?? 0;
+      filesSyncedCount = prefs.getInt('filesSyncedCount') ?? 0;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Gagal load stats: $e');
+    }
+  }
+
+  Future<void> _saveStats() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('imagesConvertedCount', imagesConvertedCount);
+      await prefs.setInt('gifsProcessedCount', gifsProcessedCount);
+      await prefs.setInt('filesSyncedCount', filesSyncedCount);
+    } catch (e) {
+      debugPrint('Gagal save stats: $e');
+    }
+  }
+
   AppSettings settings = AppSettings();
   List<LoadedFile> loadedFiles = [];
   String cppOutput = '';
@@ -18,6 +46,12 @@ class AppState extends ChangeNotifier {
   bool isGifEditorProcessing = false;
   String statusMessage = '';
   bool userModifiedCanvas = false;
+  
+  // Dashboard Stats
+  int imagesConvertedCount = 0;
+  int gifsProcessedCount = 0;
+  int filesSyncedCount = 0;
+
   GifEditorSettings gifEditorSettings = GifEditorSettings();
   LoadedFile? gifEditorFile;
   List<ImageFrame> _gifEditorSourceFrames = [];
@@ -54,6 +88,12 @@ class AppState extends ChangeNotifier {
   
   void _showToast(String msg, {bool isError = false}) {
     onToast?.call(msg, isError: isError);
+  }
+  
+  void incrementFilesSynced(int count) {
+    filesSyncedCount += count;
+    _saveStats();
+    notifyListeners();
   }
   
   void Function()? onNavigateToUpload;
@@ -237,6 +277,26 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  int get gifEditorEstimatedRamKb {
+    if (gifEditorFile == null || gifEditorFile!.frames.isEmpty) return 0;
+    // For 16-bit color, width * height * 2 bytes
+    final w = gifEditorSettings.targetSize;
+    final h = gifEditorSettings.targetSize;
+    return (w * h * 2) ~/ 1024;
+  }
+
+  int get gifEditorEstimatedFileSizeKb {
+    if (gifEditorFile == null || gifEditorFile!.frames.isEmpty) return 0;
+    final w = gifEditorSettings.targetSize;
+    final h = gifEditorSettings.targetSize;
+    final frames = gifEditorFile!.frames.length;
+    final comp = gifEditorSettings.compressionLevel;
+    // Rough estimate: raw size * factor based on compression
+    final rawSize = (w * h * frames);
+    final factor = (101 - comp) / 100.0 * 0.4; // max 40% of raw
+    return (rawSize * factor) ~/ 1024;
+  }
+
   Future<void> updateGifEditorSettings(GifEditorSettings newSettings,
       {bool autoProcess = true}) async {
     gifEditorSettings = newSettings;
@@ -289,6 +349,8 @@ class AppState extends ChangeNotifier {
       if (showToast) {
         _showToast('GIF optimized OK');
       }
+      gifsProcessedCount++;
+      _saveStats();
     } catch (e) {
       debugPrint('Error processing GIF editor frames: $e');
       _showToast('Gagal optimize GIF', isError: true);
@@ -323,12 +385,12 @@ class AppState extends ChangeNotifier {
       String outDirPath;
       String baseName;
 
+      final fallback = await _getOutputDir();
+      outDirPath = fallback.path;
+
       if (_gifEditorOriginalPath != null) {
-        outDirPath = _dirnamePath(_gifEditorOriginalPath!);
         baseName = _basenameWithoutExt(_gifEditorOriginalPath!);
       } else {
-        final fallback = await _getOutputDir();
-        outDirPath = fallback.path;
         baseName = 'optimized';
       }
 
@@ -442,6 +504,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _processAllFrames() async {
+    int newConversions = 0;
     for (final file in loadedFiles) {
       if (file.frames.isEmpty) continue;
 
@@ -454,6 +517,12 @@ class AppState extends ChangeNotifier {
       for (int i = 0; i < file.frames.length; i++) {
         file.frames[i].processedImage = results[i];
       }
+      newConversions += file.frames.length;
+    }
+    
+    if (newConversions > 0) {
+      imagesConvertedCount += newConversions;
+      _saveStats();
     }
   }
 

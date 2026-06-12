@@ -10,6 +10,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/esp_ap_transfer_service.dart';
 import '../widgets/app_toast.dart';
+import 'package:provider/provider.dart';
+import '../providers/app_state.dart';
 
 class ApTransferGuideContent extends StatefulWidget {
   final bool showMenuButton;
@@ -46,6 +48,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
   bool _uploading = false;
   bool _isConnected = false;
   bool _hasFetchedListOnce = false;
+  bool _obscurePassword = true;
 
   @override
   void initState() {
@@ -703,6 +706,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
       );
       if (!mounted) return;
       _toast('Upload berhasil (${_selectedFiles.length})');
+      Provider.of<AppState>(context, listen: false).incrementFilesSynced(_selectedFiles.length);
       setState(() {
         _selectedFiles = const [];
         _selectedFromFolder = false;
@@ -718,6 +722,7 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
             ));
         if (!mounted) return;
         _toast('Upload berhasil (${_selectedFiles.length})');
+        Provider.of<AppState>(context, listen: false).incrementFilesSynced(_selectedFiles.length);
         setState(() {
           _selectedFiles = const [];
           _selectedFromFolder = false;
@@ -773,356 +778,575 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
     }
   }
 
+  Future<void> _deleteAll() async {
+    if (_entries.isEmpty) return;
+    
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete All Files?'),
+        content: const Text('Are you sure you want to delete all files from ESP32 SPIFFS?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFBA1A1A)),
+            onPressed: () => Navigator.of(ctx).pop(true), 
+            child: const Text('Delete All'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    _toast('Menghapus semua file...');
+    try {
+      for (var entry in _entries) {
+        if (!entry.isDir) {
+          await _withBaseFallback((base) => _service.deletePath(base, entry.name));
+        }
+      }
+      for (var entry in _entries.where((e) => e.isDir).toList().reversed) {
+         await _withBaseFallback((base) => _service.deletePath(base, entry.name));
+      }
+      _toast('Semua file berhasil dihapus');
+      await _refreshAll(showToast: false);
+    } catch(e) {
+      _toast('Gagal menghapus beberapa file', isError: true);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = GanciTheme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _GuideHeaderSection(
+        _HeaderSection(
           showMenuButton: widget.showMenuButton,
           onMenuTap: widget.onMenuTap,
-          title: 'Upload Media',
+          title: 'AP Transfer & Status',
+        ),
+        const SizedBox(height: 24),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final isDesktop = constraints.maxWidth >= 768;
+            if (isDesktop) {
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 1,
+                    child: _buildLeftColumn(t),
+                  ),
+                  const SizedBox(width: 24),
+                  Expanded(
+                    flex: 2,
+                    child: _buildRightColumn(t),
+                  ),
+                ],
+              );
+            } else {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildLeftColumn(t),
+                  const SizedBox(height: 24),
+                  _buildRightColumn(t),
+                ],
+              );
+            }
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLeftColumn(GanciTheme t) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // AP Connection Card
+        _GlassCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: t.primaryContainer,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.wifi_tethering, color: Colors.white, size: 18),
+                  ),
+                  const SizedBox(width: 12),
+                  Text('AP Connection', style: TextStyle(color: t.textPrimary, fontSize: 18, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Divider(height: 1, color: Colors.black12),
+              const SizedBox(height: 16),
+              Text('Connect your device to the ESP32 Access Point to begin transfer.', style: TextStyle(color: t.textSecondary, fontSize: 14, fontFamily: 'Inter')),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: t.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: t.glassBorder),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('SSID', style: TextStyle(color: t.outline, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 1.1)),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text('ESP32-Media-App', style: TextStyle(color: t.textPrimary, fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'JetBrains Mono')),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: t.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: t.glassBorder),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('PASSWORD', style: TextStyle(color: t.outline, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 1.1)),
+                        InkWell(
+                          onTap: () => setState(() => _obscurePassword = !_obscurePassword),
+                          child: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: t.primary, size: 18),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(_obscurePassword ? '********' : '12345678', style: TextStyle(color: t.textPrimary, fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'JetBrains Mono')),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: _GuideStepCard(
-            title: 'Koneksi AP',
-            outlined: true,
+        // Endpoint Status Card
+        _GlassCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.router_outlined, color: t.outline, size: 20),
+                      const SizedBox(width: 8),
+                      Text('Endpoint Status', style: TextStyle(color: t.textPrimary, fontSize: 18, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+                    ],
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _isConnected ? GanciColors.success.withOpacity(0.15) : GanciColors.error.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 8, height: 8,
+                          decoration: BoxDecoration(
+                            color: _isConnected ? GanciColors.success : GanciColors.error,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(_isConnected ? 'Connected' : 'Disconnected', style: TextStyle(color: _isConnected ? GanciColors.success : GanciColors.error, fontSize: 12, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: t.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: t.glassBorder),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(_lastConnectedBase, style: TextStyle(color: t.textSecondary, fontSize: 13, fontFamily: 'JetBrains Mono')),
+                    Icon(_isConnected ? Icons.check_circle : Icons.error_outline, color: _isConnected ? GanciColors.success : GanciColors.error, size: 18),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: _loadingStatus || _loadingList ? null : _refreshAll,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: t.surfaceContainerHigh,
+                  foregroundColor: t.primary,
+                  minimumSize: const Size(double.infinity, 48),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  elevation: 0,
+                ),
+                icon: _loadingStatus || _loadingList 
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) 
+                    : const Icon(Icons.refresh),
+                label: Text(_loadingStatus || _loadingList ? 'Checking...' : 'Refresh / Test', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        // Device Stats Bento
+        if (_status != null)
+          Row(
+            children: [
+              Expanded(
+                child: _GlassCard(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Icon(Icons.memory, color: t.outline, size: 24),
+                      const SizedBox(height: 4),
+                      Text('Free Heap', style: TextStyle(color: t.outline, fontSize: 12, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 4),
+                      Text('${_status!.ramFreeKb.toStringAsFixed(0)} KB', style: TextStyle(color: t.textPrimary, fontSize: 18, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _GlassCard(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Icon(Icons.thermostat, color: t.outline, size: 24),
+                      const SizedBox(height: 4),
+                      Text('Core Temp', style: TextStyle(color: t.outline, fontSize: 12, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 4),
+                      Text('${_status!.tempC.toStringAsFixed(1)}°C', style: TextStyle(color: t.textPrimary, fontSize: 18, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        if (_status != null) const SizedBox(height: 16),
+        if (_status != null)
+          _GlassCard(
+            padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const _GuideTextBlock(
-                  lines: [
-                    '1) Di device ESP32 pilih menu Up Media sampai mode AP aktif.',
-                    '2) Di HP sambungkan Wi-Fi ke SSID ESP32-Media-App (password 12345678).',
-                    '3) Upload bisa pilih file/folder berisi .qoi/.bin/.gif dari Download/image2cpp.',
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.sd_storage_outlined, color: t.outline, size: 16),
+                        const SizedBox(width: 4),
+                        Text('SPIFFS Storage', style: TextStyle(color: t.outline, fontSize: 12, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                    Text('${((_status!.fsUsedMb / _status!.fsTotalMb) * 100).toStringAsFixed(0)}% Used', style: TextStyle(color: t.textSecondary, fontSize: 14)),
                   ],
                 ),
-                const SizedBox(height: 12),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: t.primary.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: t.glassBorder),
-                  ),
-                  child: Text(
-                    'Endpoint aktif: $_lastConnectedBase',
-                    style: TextStyle(
-                      color: t.primaryLight,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      fontFamily: 'Inter',
-                    ),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: _status!.fsTotalMb > 0 ? (_status!.fsUsedMb / _status!.fsTotalMb) : 0,
+                    backgroundColor: t.surfaceBright,
+                    color: t.primary,
+                    minHeight: 10,
                   ),
                 ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    ElevatedButton.icon(
-                      onPressed: _loadingStatus || _loadingList ? null : _refreshAll,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: t.primary,
-                        foregroundColor: Colors.white,
-                        disabledBackgroundColor: t.primary.withOpacity(0.75),
-                        disabledForegroundColor: Colors.white,
-                      ),
-                      icon: _loadingStatus || _loadingList
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : Icon(
-                              _isConnected
-                                  ? Icons.refresh_rounded
-                                  : Icons.wifi_find_rounded,
-                            ),
-                      label: Text(
-                        _loadingStatus || _loadingList
-                            ? 'Checking...'
-                            : (_isConnected ? 'Refresh' : 'Test Connection'),
-                      ),
-                    ),
+                    Text('Free: ${_status!.fsFreeMb.toStringAsFixed(2)} MB', style: TextStyle(color: t.textSecondary, fontSize: 13, fontFamily: 'JetBrains Mono')),
+                    Text('Total: ${_status!.fsTotalMb.toStringAsFixed(2)} MB', style: TextStyle(color: t.textSecondary, fontSize: 13, fontFamily: 'JetBrains Mono')),
                   ],
                 ),
               ],
             ),
           ),
-        ),
-        const SizedBox(height: 14),
-        SizedBox(
-          width: double.infinity,
-          child: _GuideStepCard(
-            title: 'Status ESP32',
-            outlined: true,
-            child: _status == null
-                ? Text(
-                    'Belum ambil status. Tekan Test Connection.',
-                    style: TextStyle(color: t.textMuted, fontSize: 13, fontFamily: 'Inter'),
-                  )
-                : Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      _MetricChip(label: 'FS Total', value: '${_status!.fsTotalMb.toStringAsFixed(2)} MB'),
-                      _MetricChip(label: 'FS Used', value: '${_status!.fsUsedMb.toStringAsFixed(2)} MB'),
-                      _MetricChip(label: 'FS Free', value: '${_status!.fsFreeMb.toStringAsFixed(2)} MB'),
-                      _MetricChip(label: 'RAM Total', value: '${_status!.ramTotalKb.toStringAsFixed(2)} KB'),
-                      _MetricChip(label: 'RAM Free', value: '${_status!.ramFreeKb.toStringAsFixed(2)} KB'),
-                      _MetricChip(label: 'Temp ESP32', value: '${_status!.tempC.toStringAsFixed(1)} C'),
-                    ],
-                  ),
+      ],
+    );
+  }
+
+  Widget _buildRightColumn(GanciTheme t) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Upload Section
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.7),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: t.outlineVariant, style: BorderStyle.solid, width: 2), // dashed not natively supported without package, using solid
+            boxShadow: [
+              BoxShadow(
+                color: t.primary.withOpacity(0.05),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-        ),
-        const SizedBox(height: 14),
-        SizedBox(
-          width: double.infinity,
-          child: _GuideStepCard(
-            title: 'Upload File ke ESP32',
-            outlined: true,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: [
-                    ElevatedButton.icon(
+          child: Column(
+            children: [
+              Container(
+                width: 64, height: 64,
+                decoration: BoxDecoration(
+                  color: t.surfaceContainerHigh,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.cloud_upload_outlined, color: t.primary, size: 32),
+              ),
+              const SizedBox(height: 16),
+              Text('Upload Files to ESP32', style: TextStyle(color: t.textPrimary, fontSize: 18, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+              const SizedBox(height: 8),
+              Text('Select pre-processed .h, .bin, or raw image files to transfer directly to SPIFFS storage.', textAlign: TextAlign.center, style: TextStyle(color: t.textSecondary, fontSize: 14)),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
                       onPressed: _uploading ? null : _pickFiles,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: t.surfaceContainerHigh,
-                        foregroundColor: t.primaryLight,
-                        elevation: 0,
-                        side: BorderSide(color: t.glassBorder),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: t.outlineVariant),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      icon: const Icon(Icons.attach_file_rounded),
-                      label: const Text('Pilih File/Folder'),
+                      icon: const Icon(Icons.attach_file),
+                      label: const Text('Pick File', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                     ),
-                    ElevatedButton.icon(
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
                       onPressed: _uploading ? null : _uploadSelected,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: t.primary,
                         foregroundColor: Colors.white,
-                        disabledBackgroundColor: t.primary.withOpacity(0.75),
-                        disabledForegroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        elevation: 2,
                       ),
-                      icon: _uploading
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                            )
-                          : const Icon(Icons.upload_rounded),
-                      label: Text(_uploading ? 'Uploading...' : 'Upload'),
+                      icon: _uploading 
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.send),
+                      label: Text(_uploading ? 'Uploading...' : 'Upload Now', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                ],
+              ),
+              if (_selectedFiles.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                _buildPreviewExpandedUI(t),
+              ]
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+        // File List Section
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.7),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withOpacity(0.5)),
+            boxShadow: [
+              BoxShadow(
+                color: t.primary.withOpacity(0.05),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: t.surfaceContainerLow,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                  border: Border(bottom: BorderSide(color: t.outlineVariant.withOpacity(0.3))),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.folder_open_outlined, color: t.outline, size: 20),
+                        const SizedBox(width: 8),
+                        Text('Remote SPIFFS Files', style: TextStyle(color: t.textPrimary, fontSize: 18, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        IconButton(
+                          onPressed: _entries.isEmpty || _loadingList ? null : _deleteAll,
+                          icon: Icon(Icons.delete_sweep, color: t.outline, size: 20),
+                          tooltip: 'Delete All',
+                        ),
+                        IconButton(
+                          onPressed: _loadingList ? null : _refreshList,
+                          icon: Icon(Icons.refresh, color: t.outline, size: 20),
+                          tooltip: 'Refresh List',
+                        ),
+                      ],
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                if (_selectedFiles.isEmpty)
-                  Text(
-                    'Belum ada file dipilih (.qoi/.bin/.gif).',
-                    style: TextStyle(color: t.textMuted, fontSize: 13, fontFamily: 'Inter'),
-                  )
-                else
-                  _buildPreviewExpandedUI(),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 14),
-        SizedBox(
-          width: double.infinity,
-          child: _GuideStepCard(
-            title: 'File List dari ESP32',
-            outlined: true,
-            child: _loadingList
-                ? const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(12),
-                      child: CircularProgressIndicator(),
-                    ),
-                  )
-                : _entries.isEmpty
-                    ? Text(
-                        _hasFetchedListOnce
-                          ? 'Storage ESP32 kosong. Upload file .qoi/.bin/.gif terlebih dahulu.'
-                            : 'Belum ambil list. Tekan Test Connection dulu.',
-                        style: TextStyle(color: t.textMuted, fontSize: 13, fontFamily: 'Inter'),
+              ),
+              Container(
+                padding: const EdgeInsets.all(16),
+                constraints: const BoxConstraints(minHeight: 300),
+                child: _loadingList 
+                  ? const Center(child: CircularProgressIndicator())
+                  : _entries.isEmpty 
+                    ? Center(
+                        child: Text(
+                          _hasFetchedListOnce ? 'Storage ESP32 kosong.' : 'Belum ambil list. Tekan Test Connection dulu.',
+                          style: TextStyle(color: t.outline, fontSize: 14),
+                        ),
                       )
-                    : Column(
-                        children: _entries
-                            .map(
-                              (entry) => ListTile(
-                                dense: true,
-                                contentPadding: EdgeInsets.zero,
-                                leading: Icon(
-                                  entry.isDir ? Icons.folder_rounded : Icons.insert_drive_file_rounded,
-                                  color: t.primary,
+                    : ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: _entries.length,
+                        itemBuilder: (context, index) {
+                          final entry = _entries[index];
+                          final isImage = entry.name.endsWith('.bin') || entry.name.endsWith('.gif') || entry.name.endsWith('.qoi');
+                          final isCode = entry.name.endsWith('.h') || entry.name.endsWith('.json');
+                          
+                          IconData iconData = Icons.insert_drive_file_outlined;
+                          Color iconColor = t.outline;
+                          if (entry.isDir) {
+                            iconData = Icons.folder;
+                            iconColor = t.primary;
+                          } else if (isImage) {
+                            iconData = Icons.image_outlined;
+                            iconColor = t.primary;
+                          } else if (isCode) {
+                            iconData = Icons.code;
+                            iconColor = GanciColors.warning;
+                          }
+                          
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.transparent),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(iconData, color: iconColor, size: 24),
+                                    const SizedBox(width: 12),
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(entry.name, style: TextStyle(color: t.textPrimary, fontSize: 14, fontWeight: FontWeight.w500)),
+                                        Text(entry.isDir ? 'Directory' : _formatBytes(entry.size), style: TextStyle(color: t.outline, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.5)),
+                                      ],
+                                    ),
+                                  ],
                                 ),
-                                title: Text(
-                                  entry.name,
-                                  style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w600, fontFamily: 'Inter'),
-                                ),
-                                subtitle: Text(
-                                  entry.isDir ? 'Directory' : _formatBytes(entry.size),
-                                  style: TextStyle(color: t.textMuted, fontFamily: 'Inter'),
-                                ),
-                                trailing: IconButton(
-                                  icon: Icon(Icons.delete_outline_rounded, color: GanciColors.error),
+                                IconButton(
+                                  icon: Icon(Icons.delete_outline, color: t.outline, size: 20),
+                                  hoverColor: GanciColors.error.withOpacity(0.1),
+                                  color: GanciColors.error,
                                   onPressed: () => _deleteEntry(entry),
                                 ),
-                              ),
-                            )
-                            .toList(),
+                              ],
+                            ),
+                          );
+                        },
                       ),
-          ),
-        ),
-        const SizedBox(height: 14),
-        SizedBox(
-          width: double.infinity,
-          child: _GuideStepCard(
-            title: 'Bantuan & Dukungan',
-            outlined: true,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Jika ada error atau masalah lainnya hubungi no di bawah ini:',
-                  style: TextStyle(color: t.textMuted, fontSize: 13, fontFamily: 'Inter'),
-                ),
-                const SizedBox(height: 12),
-                ElevatedButton.icon(
-                  onPressed: () async {
-                    final uri = Uri.parse('https://wa.link/7zvetw');
-                    try {
-                      final success = await launchUrl(uri, mode: LaunchMode.externalApplication);
-                      if (!success) {
-                        _toast('Tidak dapat membuka WhatsApp', isError: true);
-                      }
-                    } catch (_) {
-                      _toast('Ponsel Anda tidak memiliki aplikasi pendukung tautan', isError: true);
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF25D366),
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  ),
-                  icon: const Icon(Icons.chat_bubble_outline_rounded, size: 18),
-                  label: const Text('Hubungi WhatsApp', style: TextStyle(fontWeight: FontWeight.w600)),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ],
     );
   }
 
-  Widget _buildPreviewExpandedUI() {
-    final t = GanciTheme.of(context);
-    final Map<String, List<PlatformFile>> grouped = {};
-    final List<PlatformFile> rootFiles = [];
-
-    for (final f in _selectedFiles) {
-      if (f.name.contains('/')) {
-        final parts = f.name.split('/');
-        final folderName = parts.first;
-        grouped.putIfAbsent(folderName, () => []).add(f);
-      } else {
-        rootFiles.add(f);
-      }
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('Antrean Upload (${_selectedFiles.length} file)', style: TextStyle(fontWeight: FontWeight.w600, color: t.textPrimary, fontSize: 13, fontFamily: 'Inter')),
-            TextButton.icon(
-              onPressed: () => setState(() => _selectedFiles = []),
-              icon: Icon(Icons.clear_all_rounded, size: 16, color: GanciColors.error),
-              label: Text('Clear All', style: TextStyle(color: GanciColors.error, fontSize: 13, fontWeight: FontWeight.w600)),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        ...grouped.entries.map((e) {
-            return Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: t.primary.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: t.glassBorder),
+  Widget _buildPreviewExpandedUI(GanciTheme t) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: t.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: t.glassBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Antrean Upload (${_selectedFiles.length} file)', style: TextStyle(fontWeight: FontWeight.w600, color: t.textPrimary, fontSize: 13, fontFamily: 'Inter')),
+              InkWell(
+                onTap: () => setState(() => _selectedFiles = []),
+                child: Text('Clear All', style: TextStyle(color: GanciColors.error, fontSize: 13, fontWeight: FontWeight.w600)),
               ),
-              child: Row(
-                children: [
-                  Icon(Icons.folder_rounded, color: t.primary, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text('${e.key} (${e.value.length} file)', style: TextStyle(fontWeight: FontWeight.w600, color: t.textPrimary, fontSize: 13, fontFamily: 'Inter')),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.close_rounded, size: 18, color: GanciColors.error),
-                    constraints: const BoxConstraints(),
-                    padding: EdgeInsets.zero,
-                    onPressed: () {
-                      setState(() {
-                        _selectedFiles.removeWhere((f) => f.name.startsWith('${e.key}/'));
-                      });
-                    },
-                  ),
-                ],
-              ),
-            );
-        }),
-        ...rootFiles.map((f) {
-           return Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: t.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: t.outlineVariant),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.insert_drive_file_rounded, color: t.textMuted, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text('${f.name} (${_formatBytes(f.size)})', style: TextStyle(fontSize: 13, color: t.textSecondary, fontFamily: 'Inter')),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.close_rounded, size: 18, color: GanciColors.error),
-                    constraints: const BoxConstraints(),
-                    padding: EdgeInsets.zero,
-                    onPressed: () {
-                      setState(() {
-                        _selectedFiles.remove(f);
-                      });
-                    },
-                  ),
-                ],
-              ),
-            );
-        }),
-      ],
+            ],
+          ),
+          const SizedBox(height: 8),
+          ..._selectedFiles.map((f) {
+             return Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: t.surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.insert_drive_file_rounded, color: t.outline, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text('${f.name} (${_formatBytes(f.size)})', style: TextStyle(fontSize: 12, color: t.textSecondary, fontFamily: 'Inter')),
+                    ),
+                    InkWell(
+                      onTap: () {
+                        setState(() {
+                          _selectedFiles.remove(f);
+                        });
+                      },
+                      child: Icon(Icons.close_rounded, size: 16, color: GanciColors.error),
+                    ),
+                  ],
+                ),
+              );
+          }),
+        ],
+      ),
     );
   }
 
@@ -1148,40 +1372,12 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
   }
 }
 
-class _MetricChip extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _MetricChip({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    final t = GanciTheme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: t.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: t.glassBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: TextStyle(color: t.textMuted, fontSize: 11, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
-          const SizedBox(height: 2),
-          Text(value, style: TextStyle(color: t.primaryLight, fontSize: 13, fontWeight: FontWeight.w700, fontFamily: 'Inter')),
-        ],
-      ),
-    );
-  }
-}
-
-class _GuideHeaderSection extends StatelessWidget {
+class _HeaderSection extends StatelessWidget {
   final bool showMenuButton;
   final VoidCallback? onMenuTap;
   final String title;
 
-  const _GuideHeaderSection({required this.showMenuButton, this.onMenuTap, required this.title});
+  const _HeaderSection({required this.showMenuButton, this.onMenuTap, required this.title});
 
   @override
   Widget build(BuildContext context) {
@@ -1193,7 +1389,7 @@ class _GuideHeaderSection extends StatelessWidget {
             decoration: BoxDecoration(
               color: t.surfaceContainer,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: t.glassBorder),
+              border: Border.all(color: t.outlineVariant.withOpacity(0.5)),
             ),
             child: IconButton(
               onPressed: onMenuTap ?? () => Scaffold.of(context).openDrawer(),
@@ -1202,126 +1398,41 @@ class _GuideHeaderSection extends StatelessWidget {
             ),
           )
         else
-          Icon(Icons.menu_rounded, color: t.textMuted),
+          Icon(Icons.menu_rounded, color: t.outline),
         const SizedBox(width: 14),
         Expanded(
-          child: Text(title, style: TextStyle(color: t.textPrimary, fontSize: 26, fontWeight: FontWeight.w700, fontFamily: 'Inter', letterSpacing: -0.3)),
+          child: Text(title, style: TextStyle(color: t.primary, fontSize: 26, fontWeight: FontWeight.w700, fontFamily: 'Inter', letterSpacing: -0.3)),
         ),
       ],
     );
   }
 }
 
-class _GuideStepCard extends StatelessWidget {
-  final String title;
+class _GlassCard extends StatelessWidget {
   final Widget child;
-  final bool outlined;
+  final EdgeInsetsGeometry? padding;
 
-  const _GuideStepCard({required this.title, required this.child, this.outlined = false});
+  const _GlassCard({required this.child, this.padding});
 
   @override
   Widget build(BuildContext context) {
     final t = GanciTheme.of(context);
     return Container(
+      padding: padding ?? const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: t.surfaceContainer,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: t.glassBorder),
-        boxShadow: [BoxShadow(color: t.glassGlow, blurRadius: 24, offset: const Offset(0, 8))],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            decoration: BoxDecoration(
-              color: t.primary.withOpacity(0.06),
-              borderRadius: const BorderRadius.only(topLeft: Radius.circular(18), topRight: Radius.circular(18)),
-              border: Border(bottom: BorderSide(color: t.glassBorder)),
-            ),
-            child: Text(title, style: TextStyle(color: t.primaryLight, fontSize: 15, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+        color: Colors.white.withOpacity(0.7),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.5)),
+        boxShadow: [
+          BoxShadow(
+            color: t.primary.withOpacity(0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
-          Padding(padding: const EdgeInsets.all(20), child: child),
         ],
       ),
+      child: child,
     );
   }
 }
 
-class _GuideTextBlock extends StatelessWidget {
-  final List<String> lines;
-
-  const _GuideTextBlock({required this.lines});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: lines
-          .map(
-            (line) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Builder(builder: (context) {
-                final t = GanciTheme.of(context);
-                return Text(line, style: TextStyle(color: t.textSecondary, fontSize: 13, height: 1.45, fontWeight: FontWeight.w500, fontFamily: 'Inter'));
-              }),
-            ),
-          )
-          .toList(),
-    );
-  }
-}
-
-class _GuideLabeledList extends StatelessWidget {
-  final List<_GuideItem> items;
-
-  const _GuideLabeledList({required this.items});
-
-  @override
-  Widget build(BuildContext context) {
-    final t = GanciTheme.of(context);
-    return Column(
-      children: items
-          .map(
-            (item) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    margin: const EdgeInsets.only(top: 6),
-                    width: 7, height: 7,
-                    decoration: BoxDecoration(color: t.primary, shape: BoxShape.circle),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: RichText(
-                      text: TextSpan(
-                        children: [
-                          TextSpan(
-                            text: '${item.title}: ',
-                            style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w700, fontSize: 13, fontFamily: 'Inter'),
-                          ),
-                          TextSpan(
-                            text: item.description,
-                            style: TextStyle(color: t.textSecondary, fontWeight: FontWeight.w500, height: 1.45, fontSize: 13, fontFamily: 'Inter'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          )
-          .toList(),
-    );
-  }
-}
-
-class _GuideItem {
-  final String title;
-  final String description;
-
-  const _GuideItem({required this.title, required this.description});
-}

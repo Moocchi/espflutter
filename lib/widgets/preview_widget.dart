@@ -83,6 +83,7 @@ class _PreviewWidgetState extends State<PreviewWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final t = GanciTheme.of(context);
     final frames = widget.frames;
     if (frames.isEmpty) {
       return Container(
@@ -116,14 +117,14 @@ class _PreviewWidgetState extends State<PreviewWidget> {
     final dispH = h * scale;
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         // Frame selector
         if (frames.length > 1) ...[
           Row(
             children: [
-              const Text('Frame:',
-                  style: TextStyle(color: GanciColors.textSecondary, fontSize: 12)),
+              Text('Frame:',
+                  style: TextStyle(color: t.textSecondary, fontSize: 12)),
               const SizedBox(width: 8),
               Expanded(
                 child: Slider(
@@ -137,7 +138,7 @@ class _PreviewWidgetState extends State<PreviewWidget> {
               ),
               Text(
                 '$_currentFrame / ${frames.length - 1}',
-                style: const TextStyle(color: GanciColors.textMuted, fontSize: 11),
+                style: TextStyle(color: t.textMuted, fontSize: 11),
               ),
             ],
           ),
@@ -147,21 +148,21 @@ class _PreviewWidgetState extends State<PreviewWidget> {
           width: dispW,
           height: dispH,
           decoration: BoxDecoration(
-            border: Border.all(color: GanciColors.primary, width: 2),
+            border: Border.all(color: t.primary, width: 2),
             color: Colors.black,
           ),
           child: _currentUiImage == null
-              ? const Center(
-                  child: CircularProgressIndicator(color: GanciColors.primary))
+              ? Center(
+                  child: CircularProgressIndicator(color: t.primary))
               : CustomPaint(
                   painter: ProcessedFramePainter(_currentUiImage),
                   size: Size(dispW, dispH),
                 ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 8),
         Text(
           '${frame?.width ?? 0} x ${frame?.height ?? 0} px   |   Frame ${_currentFrame + 1} of ${frames.length}',
-          style: const TextStyle(color: GanciColors.textMuted, fontSize: 10),
+          style: TextStyle(color: t.textMuted, fontSize: 10),
         ),
       ],
     );

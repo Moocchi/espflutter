@@ -36,44 +36,72 @@ class _OutputPanelState extends State<OutputPanel> {
     AppToast.show(context, msg, isError: error);
   }
 
-  Future<String?> _showRenameDialog(String defaultName) async {
+  Future<String?> _showRenameDialog(String defaultName, GanciTheme t) async {
     final controller = TextEditingController(text: defaultName);
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: GanciColors.surfaceContainer,
-        title: const Text('Rename Output', style: TextStyle(color: GanciColors.textPrimary)),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          style: const TextStyle(color: GanciColors.textPrimary),
-          decoration: InputDecoration(
-            hintText: 'Nama file/folder',
-            hintStyle: TextStyle(color: GanciColors.textMuted),
-            filled: true,
-            fillColor: GanciColors.surfaceContainerHigh,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: GanciColors.glassBorder),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: GanciColors.glassBorder),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: GanciColors.primary, width: 1.4),
-            ),
-          ),
+        backgroundColor: t.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: t.outlineVariant.withValues(alpha: 0.5)),
         ),
+        title: Text(
+          'Rename Output',
+          style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w600, fontFamily: 'Inter'),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Nama file atau folder:', style: TextStyle(color: t.textSecondary, fontSize: 13)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w500),
+              decoration: InputDecoration(
+                hintText: 'Nama file/folder',
+                hintStyle: TextStyle(color: t.textMuted),
+                filled: true,
+                fillColor: t.surfaceContainerLow,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: t.outlineVariant.withValues(alpha: 0.5)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: t.outlineVariant.withValues(alpha: 0.5)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: t.primary, width: 2),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Batal', style: TextStyle(color: GanciColors.textMuted)),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            ),
+            child: Text('Batal', style: TextStyle(color: t.textSecondary, fontWeight: FontWeight.w600)),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Simpan', style: TextStyle(color: GanciColors.primary)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: t.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              elevation: 1,
+            ),
+            child: const Text('Simpan', style: TextStyle(fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -84,6 +112,7 @@ class _OutputPanelState extends State<OutputPanel> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final s = state.settings;
+    final t = GanciTheme.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -91,9 +120,10 @@ class _OutputPanelState extends State<OutputPanel> {
 
 
         // --- Draw Mode ---
-        _sectionTitle('Draw Mode'),
+        _sectionTitle('Draw Mode', t),
         _dropdownRow<DrawMode>(
           value: s.drawMode,
+          t: t,
           items: const [
             DropdownMenuItem(
                 value: DrawMode.horizontal1bit,
@@ -124,20 +154,20 @@ class _OutputPanelState extends State<OutputPanel> {
         Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: GanciColors.surfaceContainerHigh,
+            color: t.surfaceContainerHigh,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: GanciColors.glassBorder),
+            border: Border.all(color: t.glassBorder),
           ),
-          child: const Row(
+          child: Row(
             children: [
-              Icon(Icons.info_outline, color: GanciColors.primary, size: 14),
-              SizedBox(width: 8),
+              Icon(Icons.info_outline, color: t.primary, size: 14),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   'File disimpan di: Download/image2cpp/\n'
                   'GIF -> ada Subfolder untuk setiap frame',
                   style: TextStyle(
-                      color: GanciColors.textMuted, fontSize: 11, height: 1.5),
+                      color: t.textMuted, fontSize: 11, height: 1.5),
                 ),
               ),
             ],
@@ -155,12 +185,13 @@ class _OutputPanelState extends State<OutputPanel> {
             _actionButton(
               icon: Icons.save,
               label: 'Save .bin',
+              t: t,
               onTap: state.loadedFiles.isEmpty
                   ? null
                   : () async {
                       // Show rename dialog
                       final defaultName = state.loadedFiles.first.name.split('.').first;
-                      final customName = await _showRenameDialog(defaultName);
+                      final customName = await _showRenameDialog(defaultName, t);
                       if (customName == null) return; // User cancelled
                       
                       final result = await state.saveBinFiles(
@@ -188,12 +219,13 @@ class _OutputPanelState extends State<OutputPanel> {
             _actionButton(
               icon: Icons.bolt,
               label: 'Save .qoi',
+              t: t,
               onTap: state.loadedFiles.isEmpty
                   ? null
                   : () async {
                       // Show rename dialog
                       final defaultName = state.loadedFiles.first.name.split('.').first;
-                      final customName = await _showRenameDialog(defaultName);
+                      final customName = await _showRenameDialog(defaultName, t);
                       if (customName == null) return; // User cancelled
                       
                       final result = await state.saveQoiFiles(
@@ -224,12 +256,12 @@ class _OutputPanelState extends State<OutputPanel> {
     );
   }
 
-  Widget _sectionTitle(String text) => Padding(
+  Widget _sectionTitle(String text, GanciTheme t) => Padding(
         padding: const EdgeInsets.only(bottom: 6),
         child: Text(
           text,
-          style: const TextStyle(
-            color: GanciColors.primary,
+          style: TextStyle(
+            color: t.primary,
             fontWeight: FontWeight.bold,
             fontSize: 12,
           ),
@@ -240,12 +272,13 @@ class _OutputPanelState extends State<OutputPanel> {
     required T value,
     required List<DropdownMenuItem<T>> items,
     required ValueChanged<T?> onChanged,
+    required GanciTheme t,
   }) =>
       DropdownButtonFormField<T>(
         value: value,
-        dropdownColor: GanciColors.surfaceContainer,
-        style: const TextStyle(
-          color: GanciColors.textPrimary,
+        dropdownColor: t.surfaceContainer,
+        style: TextStyle(
+          color: t.textPrimary,
           fontSize: 13,
           fontWeight: FontWeight.w600,
         ),
@@ -255,18 +288,18 @@ class _OutputPanelState extends State<OutputPanel> {
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
           filled: true,
-          fillColor: GanciColors.surfaceContainerHigh,
+          fillColor: t.surfaceContainerHigh,
           border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: BorderSide(color: GanciColors.glassBorder)),
+              borderSide: BorderSide(color: t.glassBorder)),
           enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: BorderSide(color: GanciColors.glassBorder)),
+              borderSide: BorderSide(color: t.glassBorder)),
           focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: BorderSide(color: GanciColors.primary, width: 1.4)),
+              borderSide: BorderSide(color: t.primary, width: 1.4)),
         ),
-        iconEnabledColor: GanciColors.primary,
+        iconEnabledColor: t.primary,
         items: items,
         onChanged: onChanged,
       );
@@ -294,6 +327,7 @@ class _OutputPanelState extends State<OutputPanel> {
     required IconData icon,
     required String label,
     VoidCallback? onTap,
+    required GanciTheme t,
   }) =>
       AnimatedOpacity(
         opacity: onTap == null ? 0.4 : 1.0,
@@ -308,13 +342,13 @@ class _OutputPanelState extends State<OutputPanel> {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: GanciColors.primary,
+                  color: t.primary,
                   width: 1.6,
                 ),
-                gradient: const LinearGradient(
+                gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [GanciColors.surfaceContainer, GanciColors.surfaceContainerHigh],
+                  colors: [t.surfaceContainer, t.surfaceContainerHigh],
                 ),
               ),
               child: Padding(
@@ -323,11 +357,11 @@ class _OutputPanelState extends State<OutputPanel> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(icon, size: 16, color: GanciColors.primary),
+                    Icon(icon, size: 16, color: t.primary),
                     const SizedBox(width: 8),
                     Text(label,
-                        style: const TextStyle(
-                            color: GanciColors.primary,
+                        style: TextStyle(
+                            color: t.primary,
                             fontWeight: FontWeight.w700,
                             fontSize: 13)),
                   ],

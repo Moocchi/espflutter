@@ -128,37 +128,39 @@ class _SettingsPanelState extends State<SettingsPanel> {
   @override
   Widget build(BuildContext context) {
     final s = context.watch<AppState>().settings;
+    final t = GanciTheme.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // --- Canvas Size ---
-        _sectionTitle('Canvas Size'),
+        _sectionTitle('Canvas Size', t),
         Row(
           children: [
             _numField(_wCtrl, _wFocus, 'Width', (v) {
               _applyWidth();
               _hFocus.requestFocus(); // Move to height field
-            }),
-            const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 8),
-              child: Text('x', style: TextStyle(color: GanciColors.primaryLight))),
+            }, t),
+            Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text('x', style: TextStyle(color: t.primaryLight))),
             _numField(_hCtrl, _hFocus, 'Height', (v) {
               _applyHeight();
               FocusScope.of(context).unfocus(); // Close keyboard
               _forceApplyCanvasSize(); // Apply both
-            }),
-            const Padding(
-                padding: EdgeInsets.only(left: 8),
-              child: Text('px', style: TextStyle(color: GanciColors.textMuted))),
+            }, t),
+            Padding(
+                padding: const EdgeInsets.only(left: 8),
+              child: Text('px', style: TextStyle(color: t.textMuted))),
           ],
         ),
         const SizedBox(height: 16),
 
         // --- Anti-Alias ---
-        _sectionTitle('Anti-Aliasing'),
+        _sectionTitle('Anti-Aliasing', t),
         _dropdownRow<AntiAliasMode>(
           value: s.antiAlias,
+          t: t,
           items: const [
             DropdownMenuItem(
                 value: AntiAliasMode.smart, child: Text('Smart (auto smooth)')),
@@ -182,9 +184,10 @@ class _SettingsPanelState extends State<SettingsPanel> {
         const SizedBox(height: 16),
 
         // --- Scale ---
-        _sectionTitle('Scaling'),
+        _sectionTitle('Scaling', t),
         _dropdownRow<ScaleMode>(
           value: s.scale,
+          t: t,
           items: const [
             DropdownMenuItem(
                 value: ScaleMode.original, child: Text('Original size')),
@@ -209,7 +212,7 @@ class _SettingsPanelState extends State<SettingsPanel> {
         const SizedBox(height: 16),
 
         // --- Center ---
-        _sectionTitle('Center Image'),
+        _sectionTitle('Center Image', t),
         Row(
           children: [
             _checkboxRow(
@@ -217,31 +220,32 @@ class _SettingsPanelState extends State<SettingsPanel> {
                 s.centerHorizontally,
                 (v) =>
                     _update((s) => s.copyWith(centerHorizontally: v ?? false),
-                    description: 'Center H -> ${(v ?? false) ? 'ON' : 'OFF'}')),
+                    description: 'Center H -> ${(v ?? false) ? 'ON' : 'OFF'}'), t),
             const SizedBox(width: 24),
             _checkboxRow(
                 'Vertically',
                 s.centerVertically,
                 (v) =>
                     _update((s) => s.copyWith(centerVertically: v ?? false),
-                    description: 'Center V -> ${(v ?? false) ? 'ON' : 'OFF'}')),
+                    description: 'Center V -> ${(v ?? false) ? 'ON' : 'OFF'}'), t),
           ],
         ),
         const SizedBox(height: 16),
 
         // --- Rotation ---
-        _sectionTitle('Rotate Image'),
+        _sectionTitle('Rotate Image', t),
         _radioRow<int>(
           options: [0, 90, 180, 270],
           labels: ['0 deg', '90 deg', '180 deg', '270 deg'],
           current: s.rotation,
+          t: t,
           onChanged: (v) => _update((s) => s.copyWith(rotation: v),
               description: 'Rotation -> $v deg'),
         ),
         const SizedBox(height: 16),
 
         // --- Flip ---
-        _sectionTitle('Flip Image'),
+        _sectionTitle('Flip Image', t),
         Row(
           children: [
             _checkboxRow(
@@ -249,52 +253,52 @@ class _SettingsPanelState extends State<SettingsPanel> {
                 s.flipHorizontally,
                 (v) =>
                     _update((s) => s.copyWith(flipHorizontally: v ?? false),
-                    description: 'Flip H -> ${(v ?? false) ? 'ON' : 'OFF'}')),
+                    description: 'Flip H -> ${(v ?? false) ? 'ON' : 'OFF'}'), t),
             const SizedBox(width: 24),
             _checkboxRow('Vertically', s.flipVertically,
                 (v) => _update((s) => s.copyWith(flipVertically: v ?? false),
-                  description: 'Flip V -> ${(v ?? false) ? 'ON' : 'OFF'}')),
+                  description: 'Flip V -> ${(v ?? false) ? 'ON' : 'OFF'}'), t),
           ],
         ),
       ],
     );
   }
 
-  Widget _sectionTitle(String text) => Padding(
+  Widget _sectionTitle(String text, GanciTheme t) => Padding(
         padding: const EdgeInsets.only(bottom: 6),
         child: Text(text,
-            style: const TextStyle(
-                color: GanciColors.primary,
+            style: TextStyle(
+                color: t.primary,
                 fontWeight: FontWeight.bold,
             fontSize: 13)),
       );
 
   Widget _numField(TextEditingController ctrl, FocusNode focusNode,
-          String label, ValueChanged<String> onSubmitted) =>
+          String label, ValueChanged<String> onSubmitted, GanciTheme t) =>
       SizedBox(
         width: 72,
         child: TextField(
           controller: ctrl,
           focusNode: focusNode,
           keyboardType: TextInputType.number,
-          style: const TextStyle(color: GanciColors.textPrimary, fontWeight: FontWeight.w600),
+          style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w600),
           decoration: InputDecoration(
             labelText: label,
-          labelStyle: const TextStyle(color: GanciColors.textMuted, fontSize: 11),
+          labelStyle: TextStyle(color: t.textMuted, fontSize: 11),
             isDense: true,
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             filled: true,
-          fillColor: GanciColors.surfaceContainerHigh,
+          fillColor: t.surfaceContainerHigh,
             border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(color: GanciColors.glassBorder)),
+            borderSide: BorderSide(color: t.glassBorder)),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(color: GanciColors.glassBorder)),
+            borderSide: BorderSide(color: t.glassBorder)),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(color: GanciColors.primary, width: 1.4)),
+            borderSide: BorderSide(color: t.primary, width: 1.4)),
           ),
           onSubmitted: onSubmitted,
           textInputAction: TextInputAction.done,
@@ -306,6 +310,7 @@ class _SettingsPanelState extends State<SettingsPanel> {
     required List<String> labels,
     required T current,
     required ValueChanged<T> onChanged,
+    required GanciTheme t,
   }) =>
       Wrap(
         spacing: 16,
@@ -324,15 +329,15 @@ class _SettingsPanelState extends State<SettingsPanel> {
                         },
                         fillColor: WidgetStateProperty.resolveWith((states) {
                           if (states.contains(WidgetState.selected)) {
-                            return GanciColors.primary;
+                            return t.primary;
                           }
-                          return GanciColors.outlineVariant;
+                          return t.outlineVariant;
                         }),
                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
                       Text(labels[i],
-                          style: const TextStyle(
-                              color: GanciColors.textSecondary, fontSize: 13, fontWeight: FontWeight.w500)),
+                          style: TextStyle(
+                              color: t.textSecondary, fontSize: 13, fontWeight: FontWeight.w500)),
                     ],
                   ),
                 )),
@@ -342,28 +347,29 @@ class _SettingsPanelState extends State<SettingsPanel> {
     required T value,
     required List<DropdownMenuItem<T>> items,
     required ValueChanged<T?> onChanged,
+    required GanciTheme t,
   }) =>
       DropdownButtonFormField<T>(
         value: value,
-        dropdownColor: GanciColors.surfaceContainer,
-        style: const TextStyle(color: GanciColors.textPrimary, fontWeight: FontWeight.w600),
+        dropdownColor: t.surfaceContainer,
+        style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w600),
         decoration: InputDecoration(
           isDense: true,
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           filled: true,
-          fillColor: GanciColors.surfaceContainerHigh,
+          fillColor: t.surfaceContainerHigh,
           border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: BorderSide(color: GanciColors.glassBorder)),
+              borderSide: BorderSide(color: t.glassBorder)),
           enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: BorderSide(color: GanciColors.glassBorder)),
+              borderSide: BorderSide(color: t.glassBorder)),
           focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: BorderSide(color: GanciColors.primary, width: 1.4)),
+              borderSide: BorderSide(color: t.primary, width: 1.4)),
         ),
-        iconEnabledColor: GanciColors.primary,
+        iconEnabledColor: t.primary,
         items: items,
         onChanged: onChanged,
       );
@@ -385,18 +391,18 @@ class _SettingsPanelState extends State<SettingsPanel> {
       );
 
   Widget _checkboxRow(
-          String label, bool value, ValueChanged<bool?> onChanged) =>
+          String label, bool value, ValueChanged<bool?> onChanged, GanciTheme t) =>
       Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Checkbox(
               value: value,
               onChanged: onChanged,
-              activeColor: GanciColors.primary,
-              checkColor: GanciColors.surfaceContainer,
-              side: BorderSide(color: GanciColors.outlineVariant)),
+              activeColor: t.primary,
+              checkColor: t.surfaceContainer,
+              side: BorderSide(color: t.outlineVariant)),
           Text(label,
-              style: const TextStyle(color: GanciColors.textSecondary, fontSize: 13, fontWeight: FontWeight.w500)),
+              style: TextStyle(color: t.textSecondary, fontSize: 13, fontWeight: FontWeight.w500)),
         ],
       );
 }

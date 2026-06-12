@@ -19,19 +19,13 @@ void main() {
 
 /// ─── Theme Provider for Light/Dark switching ───
 class ThemeProvider extends ChangeNotifier {
-  ThemeMode _mode = ThemeMode.dark;
+  final ThemeMode _mode = ThemeMode.light;
   ThemeMode get mode => _mode;
-  bool get isDark => _mode == ThemeMode.dark;
+  bool get isDark => false;
 
-  void toggle() {
-    _mode = isDark ? ThemeMode.light : ThemeMode.dark;
-    notifyListeners();
-  }
+  void toggle() {}
 
-  void setMode(ThemeMode m) {
-    _mode = m;
-    notifyListeners();
-  }
+  void setMode(ThemeMode m) {}
 }
 
 /// ─── Design Tokens from Stitch Design System ───
@@ -74,27 +68,28 @@ class GanciColors {
   static const Color outlineVariant = Color(0xFF474554);
 
   // ── LIGHT THEME TOKENS ──
-  static const Color lightBackground = Color(0xFFF7F5FF);
+  static const Color lightBackground = Color(0xFFF8F9FF);
   static const Color lightSurface = Color(0xFFFFFFFF);
-  static const Color lightSurfaceContainer = Color(0xFFF0EEFF);
-  static const Color lightSurfaceContainerHigh = Color(0xFFE8E4FF);
-  static const Color lightSurfaceContainerHighest = Color(0xFFDCD8F5);
-  static const Color lightSurfaceBright = Color(0xFFF9F8FF);
+  static const Color lightSurfaceContainer = Color(0xFFE5EEFF);
+  static const Color lightSurfaceContainerLow = Color(0xFFEFF4FF);
+  static const Color lightSurfaceContainerHigh = Color(0xFFDCE9FF);
+  static const Color lightSurfaceContainerHighest = Color(0xFFD3E4FE);
+  static const Color lightSurfaceBright = Color(0xFFF8F9FF);
 
   static Color lightGlassCard = const Color(0xFFFFFFFF).withOpacity(0.92);
-  static Color lightGlassBorder = const Color(0xFF7C6BF0).withOpacity(0.12);
-  static Color lightGlassGlow = const Color(0xFF7C6BF0).withOpacity(0.06);
+  static Color lightGlassBorder = const Color(0xFFC7C4D8);
+  static Color lightGlassGlow = const Color(0xFF3525CD).withOpacity(0.05);
 
-  static const Color lightPrimary = Color(0xFF5B48CD);
-  static const Color lightPrimaryLight = Color(0xFF4C42CF);
-  static const Color lightPrimaryContainer = Color(0xFF6252E7);
+  static const Color lightPrimary = Color(0xFF3525CD);
+  static const Color lightPrimaryLight = Color(0xFF4F46E5);
+  static const Color lightPrimaryContainer = Color(0xFF4F46E5);
 
-  static const Color lightTextPrimary = Color(0xFF1A1A2E);
-  static const Color lightTextSecondary = Color(0xFF3F4670);
-  static const Color lightTextMuted = Color(0xFF6D7385);
+  static const Color lightTextPrimary = Color(0xFF0B1C30);
+  static const Color lightTextSecondary = Color(0xFF464555);
+  static const Color lightTextMuted = Color(0xFF777587);
 
-  static const Color lightOutline = Color(0xFFB4B9C8);
-  static const Color lightOutlineVariant = Color(0xFFD4D1FF);
+  static const Color lightOutline = Color(0xFF777587);
+  static const Color lightOutlineVariant = Color(0xFFC7C4D8);
 }
 
 /// ─── Theme-Aware Color Access ───
@@ -105,7 +100,9 @@ class GanciTheme {
   Color get bg => isDark ? GanciColors.background : GanciColors.lightBackground;
   Color get surface => isDark ? GanciColors.surface : GanciColors.lightSurface;
   Color get surfaceContainer => isDark ? GanciColors.surfaceContainer : GanciColors.lightSurfaceContainer;
+  Color get surfaceContainerLow => isDark ? GanciColors.surfaceContainer : GanciColors.lightSurfaceContainerLow;
   Color get surfaceContainerHigh => isDark ? GanciColors.surfaceContainerHigh : GanciColors.lightSurfaceContainerHigh;
+  Color get surfaceContainerHighest => isDark ? GanciColors.surfaceContainerHighest : GanciColors.lightSurfaceContainerHighest;
   Color get surfaceBright => isDark ? GanciColors.surfaceBright : GanciColors.lightSurfaceBright;
 
   Color get glassCard => isDark ? GanciColors.glassCard : GanciColors.lightGlassCard;

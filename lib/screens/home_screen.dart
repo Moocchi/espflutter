@@ -5,13 +5,13 @@ import '../main.dart';
 import '../models/app_settings.dart';
 import '../providers/app_state.dart';
 import '../widgets/app_toast.dart';
-import '../widgets/glass_card.dart';
 import '../widgets/output_panel.dart';
 import '../widgets/preview_widget.dart';
 import '../widgets/settings_panel.dart';
 import 'ap_transfer_guide_content.dart';
 import '../esp_bridge/screens/player_screen.dart';
 import '../esp_bridge/services/system_media_service.dart';
+import '../esp_bridge/services/ble_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -126,10 +126,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                 : _selectedTab == _MenuTab.imageConverter
                                     ? _ConverterContent(
                                         showMenuButton: !isDesktop,
+                                        isDesktop: isDesktop,
                                       )
                                     : _selectedTab == _MenuTab.gifEditor
                                         ? _GifEditorContent(
                                             showMenuButton: !isDesktop,
+                                            isDesktop: isDesktop,
                                           )
                                     : ApTransferGuideContent(
                                         showMenuButton: !isDesktop,
@@ -160,170 +162,364 @@ class _HomeContent extends StatelessWidget {
       children: [
         _HeaderSection(showMenuButton: showMenuButton, title: 'Ganci', subtitle: 'ESP32 Image Tools'),
         const SizedBox(height: 24),
-        // Quick stats row
-        SizedBox(
-          height: 100,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            children: const [
-              _StatCard(icon: Icons.image_rounded, value: '1.2k', label: 'IMAGES CONVERTED', color: GanciColors.primary),
-              SizedBox(width: 12),
-              _StatCard(icon: Icons.gif_box_rounded, value: '450', label: 'GIFS PROCESSED', color: GanciColors.secondary),
-              SizedBox(width: 12),
-              _StatCard(icon: Icons.send_rounded, value: '890', label: 'FILES TRANSFERRED', color: GanciColors.warning),
-            ],
-          ),
-        ),
+        _buildDeviceStatusBanner(context),
+        const SizedBox(height: 24),
+        _buildStatsGrid(context),
         const SizedBox(height: 24),
         Text('Features', style: TextStyle(color: t.textPrimary, fontSize: 18, fontWeight: FontWeight.w700, fontFamily: 'Inter')),
         const SizedBox(height: 14),
         _buildFeatureGrid(context),
-        const SizedBox(height: 24),
-        Text('Recent Activity', style: TextStyle(color: t.textPrimary, fontSize: 18, fontWeight: FontWeight.w700, fontFamily: 'Inter')),
-        const SizedBox(height: 14),
-        _buildActivityList(),
       ],
     );
   }
 
-  Widget _buildFeatureGrid(BuildContext context) {
-    final items = [
-      _FeatureItem(Icons.image_rounded, 'Image Converter', 'Convert images to byte arrays for OLED/LCD', GanciColors.primaryContainer, _MenuTab.imageConverter),
-      _FeatureItem(Icons.gif_box_rounded, 'GIF Editor', 'Optimize & resize GIFs for ESP32 displays', GanciColors.secondary, _MenuTab.gifEditor),
-      _FeatureItem(Icons.wifi_tethering_rounded, 'AP Transfer', 'Send files via WiFi to your ESP32', GanciColors.warning, _MenuTab.apTransferGuide),
-      _FeatureItem(Icons.sensors_rounded, 'ESP Bridge', 'BLE media control & device manager', GanciColors.tertiary, _MenuTab.espBridge),
-    ];
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final cardWidth = (constraints.maxWidth - 12) / 2;
-        return Wrap(
-          spacing: 12, runSpacing: 12,
-          children: items.map((item) => SizedBox(
-            width: cardWidth.clamp(100.0, 400.0),
-            child: _FeatureCard(item: item, onTap: () => onNavigate(item.tab)),
-          )).toList(),
+  Widget _buildDeviceStatusBanner(BuildContext context) {
+    final t = GanciTheme.of(context);
+    return StreamBuilder<BleStatus>(
+      stream: BleService().statusStream,
+      initialData: BleService().currentStatus,
+      builder: (context, snapshot) {
+        final status = snapshot.data ?? BleStatus.disconnected;
+        String statusText = 'Disconnected';
+        Color statusColor = t.outline;
+        if (status == BleStatus.connected) {
+          statusText = 'Connected via BLE';
+          statusColor = const Color(0xFF006C49); // Mint
+        } else if (status == BleStatus.scanning) {
+          statusText = 'Scanning for devices...';
+          statusColor = const Color(0xFFFFB547); // Warning/Orange
+        } else if (status == BleStatus.connecting) {
+          statusText = 'Connecting...';
+          statusColor = t.primary;
+        }
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: t.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: t.outlineVariant.withOpacity(0.5)),
+            boxShadow: [
+              BoxShadow(
+                color: t.primary.withOpacity(0.03),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: t.surfaceContainerLow,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.developer_board_rounded, size: 22, color: t.primary),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('ESP32-S3 DevKit', style: TextStyle(color: t.textPrimary, fontSize: 15, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: statusColor,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(statusText, style: TextStyle(color: statusColor, fontSize: 12, fontWeight: FontWeight.w500, fontFamily: 'Inter')),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              TextButton(
+                onPressed: () => onNavigate(_MenuTab.espBridge),
+                style: TextButton.styleFrom(
+                  backgroundColor: t.surfaceContainerLow,
+                  foregroundColor: t.primary,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text('Details', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+              ),
+            ],
+          ),
         );
       },
     );
   }
 
-  Widget _buildActivityList() {
-    final activities = [
-      ('Converted logo.png → 240x240 RGB565', '2 min ago', Icons.check_circle_rounded, GanciColors.secondary),
-      ('Transferred cat.gif to ESP32', '15 min ago', Icons.send_rounded, GanciColors.primary),
-      ('Optimized animation.gif (32 frames)', '1 hr ago', Icons.auto_fix_high_rounded, GanciColors.warning),
-    ];
-    return Builder(builder: (context) {
-      final t = GanciTheme.of(context);
-      return Column(
-        children: activities.map((a) => Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: t.surfaceContainer,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: t.glassBorder),
-          ),
-          child: Row(children: [
+  Widget _buildStatsGrid(BuildContext context) {
+    final t = GanciTheme.of(context);
+    final appState = context.watch<AppState>();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth >= 600;
+        final cardWidth = (isWide ? (constraints.maxWidth - 24) / 3 : (constraints.maxWidth - 12) / 2).floorToDouble();
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
             Container(
-              width: 36, height: 36,
-              decoration: BoxDecoration(color: a.$4.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
-              child: Icon(a.$3, size: 18, color: a.$4),
+              width: cardWidth,
+              height: 110,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: t.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: t.outlineVariant.withOpacity(0.5)),
+                boxShadow: [
+                  BoxShadow(
+                    color: t.primary.withOpacity(0.03),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Images Converted', style: TextStyle(color: t.textSecondary, fontSize: 12, fontWeight: FontWeight.w500)),
+                      Icon(Icons.image_outlined, color: t.textMuted, size: 18),
+                    ],
+                  ),
+                  Text('${appState.imagesConvertedCount}', style: TextStyle(color: t.primary, fontSize: 24, fontWeight: FontWeight.w700, fontFamily: 'Inter')),
+                ],
+              ),
             ),
-            const SizedBox(width: 12),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(a.$1, style: TextStyle(color: t.textPrimary, fontSize: 13, fontWeight: FontWeight.w500, fontFamily: 'Inter'), maxLines: 1, overflow: TextOverflow.ellipsis),
-              const SizedBox(height: 2),
-              Text(a.$2, style: TextStyle(color: t.textMuted, fontSize: 11, fontFamily: 'Inter')),
-            ])),
-          ]),
-        )).toList(),
-      );
-    });
+            Container(
+              width: cardWidth,
+              height: 110,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: t.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: t.outlineVariant.withOpacity(0.5)),
+                boxShadow: [
+                  BoxShadow(
+                    color: t.primary.withOpacity(0.03),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('GIFs Processed', style: TextStyle(color: t.textSecondary, fontSize: 12, fontWeight: FontWeight.w500)),
+                      Icon(Icons.gif_box_outlined, color: t.textMuted, size: 18),
+                    ],
+                  ),
+                  Text('${appState.gifsProcessedCount}', style: TextStyle(color: t.primary, fontSize: 24, fontWeight: FontWeight.w700, fontFamily: 'Inter')),
+                ],
+              ),
+            ),
+            Container(
+              width: isWide ? cardWidth : constraints.maxWidth,
+              height: 110,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: t.primaryContainer,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: t.primary.withOpacity(0.15),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Files Synced', style: TextStyle(color: Color(0xE6FFFFFF), fontSize: 12, fontWeight: FontWeight.w500)),
+                      const Icon(Icons.sync, color: Colors.white, size: 18),
+                    ],
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text('${appState.filesSyncedCount}', style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w700, fontFamily: 'Inter')),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text('Total', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w600)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildFeatureGrid(BuildContext context) {
+    final t = GanciTheme.of(context);
+    final items = [
+      _FeatureItem(
+        Icons.image_aspect_ratio_rounded,
+        'Image Converter',
+        'Convert to RGB565 / Grayscale',
+        t.primary,
+        _MenuTab.imageConverter,
+      ),
+      _FeatureItem(
+        Icons.gif_box_rounded,
+        'GIF Editor',
+        'Extract frames & optimize',
+        t.primary,
+        _MenuTab.gifEditor,
+      ),
+      _FeatureItem(
+        Icons.settings_input_antenna_rounded,
+        'AP Transfer',
+        'Direct Wi-Fi file upload',
+        t.primary,
+        _MenuTab.apTransferGuide,
+      ),
+      _FeatureItem(
+        Icons.sync_alt_rounded,
+        'ESP Bridge',
+        'Serial monitor & control',
+        t.primary,
+        _MenuTab.espBridge,
+      ),
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth >= 768;
+        final crossAxisCount = 2;
+        final cardWidth = ((constraints.maxWidth - (crossAxisCount - 1) * 12) / crossAxisCount).floorToDouble();
+
+        return Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: items.map((item) => SizedBox(
+            width: cardWidth,
+            child: Material(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(16),
+              child: InkWell(
+                onTap: () => onNavigate(item.tab),
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: t.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: t.outlineVariant.withOpacity(0.5)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: t.primary.withOpacity(0.03),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: t.surfaceContainerLow,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(item.icon, size: 22, color: t.primary),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(item.title, style: TextStyle(color: t.textPrimary, fontSize: 15, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+                      const SizedBox(height: 4),
+                      Text(item.desc, style: TextStyle(color: t.textSecondary, fontSize: 12, fontFamily: 'Inter')),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          )).toList(),
+        );
+      },
+    );
   }
 }
 
-class _StatCard extends StatelessWidget {
-  final IconData icon;
-  final String value;
-  final String label;
-  final Color color;
+class _BentoCard extends StatelessWidget {
+  final Widget icon;
+  final String title;
+  final Widget child;
 
-  const _StatCard({required this.icon, required this.value, required this.label, required this.color});
+  const _BentoCard({required this.icon, required this.title, required this.child});
 
   @override
   Widget build(BuildContext context) {
     final t = GanciTheme.of(context);
     return Container(
-      width: 150, padding: const EdgeInsets.all(14),
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: t.surfaceContainer,
+        color: t.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withOpacity(0.2)),
-        boxShadow: [BoxShadow(color: color.withOpacity(0.06), blurRadius: 16)],
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
-        Row(children: [
-          Icon(icon, size: 16, color: color),
-          const SizedBox(width: 6),
-          Text(value, style: TextStyle(color: t.textPrimary, fontSize: 22, fontWeight: FontWeight.w700, fontFamily: 'Inter')),
-        ]),
-        const SizedBox(height: 6),
-        Text(label, style: TextStyle(color: t.textMuted, fontSize: 9, fontWeight: FontWeight.w600, fontFamily: 'Inter', letterSpacing: 0.8)),
-      ]),
-    );
-  }
-}
-
-class _FeatureItem {
-  final IconData icon;
-  final String title;
-  final String desc;
-  final Color color;
-  final _MenuTab tab;
-  const _FeatureItem(this.icon, this.title, this.desc, this.color, this.tab);
-}
-
-class _FeatureCard extends StatelessWidget {
-  final _FeatureItem item;
-  final VoidCallback onTap;
-  const _FeatureCard({required this.item, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final t = GanciTheme.of(context);
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        splashColor: item.color.withOpacity(0.08),
-        highlightColor: item.color.withOpacity(0.04),
-        child: Ink(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: t.surfaceContainer,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: item.color.withOpacity(0.15)),
-            boxShadow: [BoxShadow(color: item.color.withOpacity(0.05), blurRadius: 12)],
+        border: Border.all(color: t.outlineVariant.withValues(alpha: 0.5)),
+        boxShadow: [
+          BoxShadow(
+            color: t.primary.withValues(alpha: 0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Container(
-              width: 40, height: 40,
-              decoration: BoxDecoration(color: item.color.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
-              child: Icon(item.icon, size: 22, color: item.color),
-            ),
-            const SizedBox(height: 12),
-            Text(item.title, style: TextStyle(color: t.textPrimary, fontSize: 14, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
-            const SizedBox(height: 4),
-            Text(item.desc, style: TextStyle(color: t.textMuted, fontSize: 11, fontFamily: 'Inter'), maxLines: 2, overflow: TextOverflow.ellipsis),
-            const SizedBox(height: 8),
-            Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-              Icon(Icons.arrow_forward_rounded, size: 16, color: item.color),
-            ]),
-          ]),
-        ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              icon,
+              const SizedBox(width: 12),
+              Expanded(child: Text(title, style: TextStyle(color: t.textPrimary, fontSize: 18, fontWeight: FontWeight.w600, fontFamily: 'Inter'))),
+            ],
+          ),
+          const SizedBox(height: 20),
+          child,
+        ],
       ),
     );
   }
@@ -331,13 +527,107 @@ class _FeatureCard extends StatelessWidget {
 
 class _ConverterContent extends StatelessWidget {
   final bool showMenuButton;
+  final bool isDesktop;
 
-  const _ConverterContent({required this.showMenuButton});
+  const _ConverterContent({required this.showMenuButton, required this.isDesktop});
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final hasFiles = state.loadedFiles.isNotEmpty;
+    final t = GanciTheme.of(context);
+
+    final sourceFilesCard = _BentoCard(
+      icon: Container(
+        width: 40, height: 40,
+        decoration: BoxDecoration(color: t.surfaceContainerLow, borderRadius: BorderRadius.circular(8)),
+        child: Icon(Icons.upload_file_rounded, color: t.primary),
+      ),
+      title: 'Source Files',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: state.isProcessing ? null : state.pickFiles,
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: t.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: t.outlineVariant.withValues(alpha: 0.8)),
+              ),
+              child: Column(
+                children: [
+                  Icon(Icons.add_photo_alternate_rounded, color: t.primaryLight, size: 40),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: state.isProcessing ? null : state.pickFiles,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: t.primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      elevation: 1,
+                    ),
+                    child: const Text('Choose Files', style: TextStyle(fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+                  ),
+                  const SizedBox(height: 16),
+                  Text('Supports PNG, JPG, BMP, GIF', style: TextStyle(color: t.textSecondary, fontSize: 14)),
+                  const SizedBox(height: 4),
+                  Text('Max 5MB per file', style: TextStyle(color: t.textMuted, fontSize: 12, letterSpacing: 0.5, fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+          ),
+          if (hasFiles) ...[
+            const SizedBox(height: 20),
+            ...state.loadedFiles.map((file) => _FileCard(
+              file: file,
+              onRemove: () => state.removeFile(file),
+            )).toList(),
+          ],
+        ],
+      ),
+    );
+
+
+
+    final settingsCard = _BentoCard(
+      icon: Container(
+        width: 40, height: 40,
+        decoration: BoxDecoration(color: t.surfaceContainerLow, borderRadius: BorderRadius.circular(8)),
+        child: Icon(Icons.settings_rounded, color: t.primary),
+      ),
+      title: 'Image Settings',
+      child: const SettingsPanel(),
+    );
+
+    final bottomCards = [
+      const SizedBox(height: 24),
+      _BentoCard(
+        icon: Container(
+          width: 40, height: 40,
+          decoration: BoxDecoration(color: t.surfaceContainerLow, borderRadius: BorderRadius.circular(8)),
+          child: Icon(Icons.visibility_rounded, color: t.primary),
+        ),
+        title: 'Preview',
+        child: hasFiles
+            ? _PreviewSection(loadedFiles: state.loadedFiles)
+            : Text('No files selected', style: TextStyle(color: t.textMuted, fontSize: 14)),
+      ),
+      const SizedBox(height: 24),
+      _BentoCard(
+        icon: Container(
+          width: 40, height: 40,
+          decoration: BoxDecoration(color: t.surfaceContainerLow, borderRadius: BorderRadius.circular(8)),
+          child: Icon(Icons.code_rounded, color: t.primary),
+        ),
+        title: 'Output',
+        child: const OutputPanel(),
+      ),
+    ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -345,76 +635,37 @@ class _ConverterContent extends StatelessWidget {
         _HeaderSection(
           showMenuButton: showMenuButton,
           title: 'Image Converter',
-          subtitle: 'Convert image to C++ output',
+          subtitle: 'Convert and optimize images for ESP32 displays',
         ),
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: _StepCard(
-            title: 'Select Image / GIF',
-            outlined: true,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Supports PNG, JPG, BMP, and GIF (multi-frame).',
-                  style: TextStyle(color: GanciColors.primaryLight, fontSize: 12),
+        const SizedBox(height: 24),
+        if (isDesktop)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 7,
+                child: Column(
+                  children: [sourceFilesCard],
                 ),
-                const SizedBox(height: 14),
-                _PrimaryActionButton(
-                  icon: Icons.add_photo_alternate_outlined,
-                  label: 'Choose Files',
-                  onTap: state.isProcessing ? null : state.pickFiles,
+              ),
+              const SizedBox(width: 24),
+              Expanded(
+                flex: 5,
+                child: Column(
+                  children: [settingsCard],
                 ),
-                const SizedBox(height: 14),
-                if (hasFiles)
-                  ...state.loadedFiles
-                      .map((file) => _FileCard(
-                            file: file,
-                            onRemove: () => state.removeFile(file),
-                          ))
-                      .toList()
-                else
-                  const Text(
-                    'No files selected',
-                    style: TextStyle(color: GanciColors.textMuted, fontSize: 12),
-                  ),
-              ],
-            ),
+              ),
+            ],
+          )
+        else
+          Column(
+            children: [
+              sourceFilesCard,
+              const SizedBox(height: 24),
+              settingsCard,
+            ],
           ),
-        ),
-        const SizedBox(height: 14),
-        const SizedBox(
-          width: double.infinity,
-          child: _StepCard(
-            title: 'Image Settings',
-            outlined: true,
-            child: SettingsPanel(),
-          ),
-        ),
-        const SizedBox(height: 14),
-        SizedBox(
-          width: double.infinity,
-          child: _StepCard(
-            title: 'Preview',
-            outlined: true,
-            child: hasFiles
-                ? _PreviewSection(loadedFiles: state.loadedFiles)
-                : const Text(
-                    'No files selected',
-                    style: TextStyle(color: GanciColors.textMuted, fontSize: 12),
-                  ),
-          ),
-        ),
-        const SizedBox(height: 14),
-        const SizedBox(
-          width: double.infinity,
-          child: _StepCard(
-            title: 'Output',
-            outlined: true,
-            child: OutputPanel(),
-          ),
-        ),
+        ...bottomCards,
       ],
     );
   }
@@ -422,50 +673,76 @@ class _ConverterContent extends StatelessWidget {
 
 class _GifEditorContent extends StatelessWidget {
   final bool showMenuButton;
+  final bool isDesktop;
 
-  const _GifEditorContent({required this.showMenuButton});
+  const _GifEditorContent({required this.showMenuButton, required this.isDesktop});
 
-  Future<String?> _showRenameDialog(BuildContext context, String defaultName) async {
+  Future<String?> _showRenameDialog(BuildContext context, String defaultName, GanciTheme t) async {
     final controller = TextEditingController(text: defaultName);
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: GanciColors.surfaceContainer,
-        title: const Text(
+        backgroundColor: t.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: t.outlineVariant.withValues(alpha: 0.5)),
+        ),
+        title: Text(
           'Save Optimized GIF',
-          style: TextStyle(color: GanciColors.textPrimary),
+          style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w600, fontFamily: 'Inter'),
         ),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          style: const TextStyle(color: GanciColors.textPrimary),
-          decoration: InputDecoration(
-            hintText: 'Nama file .gif',
-            hintStyle: TextStyle(color: GanciColors.textMuted),
-            filled: true,
-            fillColor: GanciColors.surfaceContainerHigh,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: GanciColors.glassBorder),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Nama file:', style: TextStyle(color: t.textSecondary, fontSize: 13)),
+            const SizedBox(height: 8),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w500),
+              decoration: InputDecoration(
+                hintText: 'Nama file .gif',
+                hintStyle: TextStyle(color: t.textMuted),
+                filled: true,
+                fillColor: t.surfaceContainerLow,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: t.outlineVariant.withValues(alpha: 0.5)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: t.outlineVariant.withValues(alpha: 0.5)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: t.primary, width: 2),
+                ),
+              ),
             ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: GanciColors.glassBorder),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: GanciColors.primary, width: 1.4),
-            ),
-          ),
+          ],
         ),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Batal', style: TextStyle(color: GanciColors.textMuted)),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            ),
+            child: Text('Batal', style: TextStyle(color: t.textSecondary, fontWeight: FontWeight.w600)),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Simpan', style: TextStyle(color: GanciColors.primary)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: t.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              elevation: 1,
+            ),
+            child: const Text('Simpan', style: TextStyle(fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -478,6 +755,329 @@ class _GifEditorContent extends StatelessWidget {
     final settings = state.gifEditorSettings;
     final gif = state.gifEditorFile;
     final hasGif = gif != null && gif.frames.isNotEmpty;
+    final t = GanciTheme.of(context);
+
+    final sourceAnimationCard = _BentoCard(
+      icon: Container(
+        width: 40, height: 40,
+        decoration: BoxDecoration(color: t.surfaceContainerLow, borderRadius: BorderRadius.circular(8)),
+        child: Icon(Icons.upload_file_rounded, color: t.primary),
+      ),
+      title: 'Source Animation',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: state.isGifEditorProcessing ? null : state.pickGifForEditor,
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: t.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: t.outlineVariant.withValues(alpha: 0.8)),
+              ),
+              child: Column(
+                children: [
+                  Icon(Icons.add_photo_alternate_rounded, color: t.primaryLight, size: 40),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: state.isGifEditorProcessing ? null : state.pickGifForEditor,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: t.primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      elevation: 1,
+                    ),
+                    child: Text(hasGif ? 'Choose Another GIF' : 'Choose GIF', style: const TextStyle(fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+                  ),
+                  const SizedBox(height: 16),
+                  Text('Supports GIF format', style: TextStyle(color: t.textSecondary, fontSize: 14)),
+                  const SizedBox(height: 4),
+                  Text('Max 5MB per file', style: TextStyle(color: t.textMuted, fontSize: 12, letterSpacing: 0.5, fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+          ),
+          if (hasGif) ...[
+            const SizedBox(height: 20),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: t.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: t.glassBorder),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.check_circle_rounded, color: t.primary, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      '${gif.name} • ${gif.frames.length} frames',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: t.primary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        fontFamily: 'Inter',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          ],
+        ],
+      ),
+    );
+
+    final settingsCard = _BentoCard(
+      icon: Container(
+        width: 40, height: 40,
+        decoration: BoxDecoration(color: t.surfaceContainerLow, borderRadius: BorderRadius.circular(8)),
+        child: Icon(Icons.tune_rounded, color: t.primary),
+      ),
+      title: 'Optimization Settings',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Center Crop', style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w600, fontSize: 14, fontFamily: 'Inter')),
+                    Text('Fill target area', style: TextStyle(color: t.textMuted, fontSize: 12)),
+                  ],
+                ),
+              ),
+              Switch(
+                value: settings.centerCrop,
+                activeColor: t.primary,
+                onChanged: state.isGifEditorProcessing
+                    ? null
+                    : (value) {
+                        state.updateGifEditorSettings(
+                          settings.copyWith(centerCrop: value),
+                        );
+                      },
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: t.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: t.outlineVariant.withValues(alpha: 0.5)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Target Dimensions', style: TextStyle(color: t.textPrimary, fontSize: 14, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(color: t.surfaceContainerHigh, borderRadius: BorderRadius.circular(6)),
+                  child: Text('240x240', style: TextStyle(color: t.primary, fontFamily: 'JetBrains Mono', fontSize: 12, fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text('Background Color', style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w600, fontSize: 14, fontFamily: 'Inter')),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _SelectionPill(
+                  active: settings.fillColor == GifFillColor.black,
+                  label: 'Black',
+                  onTap: state.isGifEditorProcessing ? null : () => state.updateGifEditorSettings(settings.copyWith(fillColor: GifFillColor.black)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _SelectionPill(
+                  active: settings.fillColor == GifFillColor.white,
+                  label: 'White',
+                  onTap: state.isGifEditorProcessing ? null : () => state.updateGifEditorSettings(settings.copyWith(fillColor: GifFillColor.white)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text('Optimization Method', style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w600, fontSize: 14, fontFamily: 'Inter')),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<GifOptimizationMethod>(
+            value: settings.optimizationMethod,
+            isExpanded: true,
+            decoration: InputDecoration(
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              filled: true,
+              fillColor: t.surfaceContainerLow,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: t.outlineVariant.withValues(alpha: 0.5))),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: t.outlineVariant.withValues(alpha: 0.5))),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: t.primary, width: 1.5)),
+            ),
+            items: const [
+              DropdownMenuItem(value: GifOptimizationMethod.lossy, child: Text('Lossy Compression', style: TextStyle(fontFamily: 'Inter', fontSize: 14))),
+            ],
+            onChanged: state.isGifEditorProcessing ? null : (value) {
+              if (value != null) state.updateGifEditorSettings(settings.copyWith(optimizationMethod: value), autoProcess: false);
+            },
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(child: Text('Compression Level', style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w600, fontSize: 14, fontFamily: 'Inter'))),
+              Text('${settings.compressionLevel}%', style: TextStyle(color: t.primary, fontFamily: 'JetBrains Mono', fontSize: 14, fontWeight: FontWeight.w600)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: t.primary,
+              inactiveTrackColor: t.surfaceContainerHigh,
+              thumbColor: t.primary,
+              overlayColor: t.primary.withValues(alpha: 0.12),
+            ),
+            child: Slider(
+              min: 1,
+              max: 100,
+              divisions: 99,
+              value: settings.compressionLevel.toDouble(),
+              onChanged: state.isGifEditorProcessing ? null : (value) => state.updateGifEditorSettings(settings.copyWith(compressionLevel: value.round()), autoProcess: false),
+              onChangeEnd: state.isGifEditorProcessing ? null : (_) => state.processGifEditor(showToast: false),
+            ),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('High Quality', style: TextStyle(color: t.textMuted, fontSize: 12)),
+              Text('Small Size', style: TextStyle(color: t.textMuted, fontSize: 12)),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    final actionButtons = Row(
+      children: [
+        Expanded(
+          child: ElevatedButton.icon(
+            onPressed: (!hasGif || state.isGifEditorProcessing) ? null : () => state.processGifEditor(),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: t.surfaceContainerLow,
+              foregroundColor: t.primary,
+              side: BorderSide(color: t.primary.withValues(alpha: 0.5), width: 1),
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            icon: Icon(state.isGifEditorProcessing ? Icons.hourglass_top_rounded : Icons.play_arrow_rounded),
+            label: Text(state.isGifEditorProcessing ? 'Processing...' : 'Process GIF', style: const TextStyle(fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: ElevatedButton.icon(
+            onPressed: (!hasGif || state.isGifEditorProcessing) ? null : () async {
+              final baseName = gif.name.contains('.') ? gif.name.substring(0, gif.name.lastIndexOf('.')) : gif.name;
+              final customName = await _showRenameDialog(context, '${baseName}_optimized', t);
+              if (customName == null) return;
+              final result = await state.saveOptimizedGif(customName: customName.isEmpty ? null : customName);
+              if (!context.mounted) return;
+              if (result.path.isEmpty) {
+                AppToast.show(context, 'Gagal save optimized GIF', isError: true);
+              } else {
+                AppToast.show(context, '${result.fileName} disimpan ke image2cpp');
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: t.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              elevation: 2,
+            ),
+            icon: Icon(state.isGifEditorProcessing ? Icons.hourglass_bottom_rounded : Icons.save_rounded),
+            label: Text(state.isGifEditorProcessing ? 'Saving...' : 'Save Optimized', style: const TextStyle(fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+          ),
+        ),
+      ],
+    );
+
+    final previewCard = _BentoCard(
+      icon: Container(
+        width: 40, height: 40,
+        decoration: BoxDecoration(color: t.surfaceContainerLow, borderRadius: BorderRadius.circular(8)),
+        child: Icon(Icons.preview_rounded, color: t.primary),
+      ),
+      title: 'Preview',
+      child: Column(
+        children: [
+          if (hasGif)
+            Container(
+              child: PreviewWidget(
+                frames: gif.frames.map((f) => f.sourceImage).toList(growable: false),
+                isGif: true,
+              ),
+            )
+          else
+            Container(
+              width: 240, height: 240,
+              decoration: BoxDecoration(
+                color: Colors.black,
+                border: Border.all(color: t.surfaceContainerHighest, width: 4),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.gif_box_outlined, size: 48, color: t.textMuted.withValues(alpha: 0.5)),
+                  const SizedBox(height: 8),
+                  Text('No preview available', style: TextStyle(color: t.textMuted.withValues(alpha: 0.8), fontSize: 12, fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+          const SizedBox(height: 24),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: t.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: t.outlineVariant.withValues(alpha: 0.3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('ESTIMATED OUTPUT STATS', style: TextStyle(color: t.textMuted, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.0, fontFamily: 'Inter')),
+                const SizedBox(height: 16),
+                _buildStatRow(t, Icons.sd_storage_outlined, 'File Size', hasGif ? '${state.gifEditorEstimatedFileSizeKb} KB' : '-- KB'),
+                Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Divider(color: t.outlineVariant.withValues(alpha: 0.2), height: 1)),
+                _buildStatRow(t, Icons.animation_rounded, 'Frames', hasGif ? '${gif.frames.length}' : '--'),
+                Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Divider(color: t.outlineVariant.withValues(alpha: 0.2), height: 1)),
+                _buildStatRow(t, Icons.speed_rounded, 'Framerate', hasGif ? '15 FPS' : '-- FPS'),
+                Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Divider(color: t.outlineVariant.withValues(alpha: 0.2), height: 1)),
+                _buildStatRow(t, Icons.memory_rounded, 'RAM Est.', hasGif ? '${state.gifEditorEstimatedRamKb} KB' : '-- KB'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final leftColCards = [sourceAnimationCard, const SizedBox(height: 20), settingsCard, const SizedBox(height: 20), actionButtons];
+    final rightColCards = [previewCard];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -485,369 +1085,52 @@ class _GifEditorContent extends StatelessWidget {
         _HeaderSection(
           showMenuButton: showMenuButton,
           title: 'Gif Editor',
-          subtitle: 'Center crop, resize 240x240, and optimize GIF',
+          subtitle: 'Optimize and prepare animations for ESP32 display',
         ),
         const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: _StepCard(
-            title: 'Select GIF',
-            outlined: true,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _PrimaryActionButton(
-                  icon: Icons.gif_box_rounded,
-                  label: hasGif ? 'Choose Another GIF' : 'Choose GIF',
-                  onTap: state.isGifEditorProcessing ? null : state.pickGifForEditor,
+        if (isDesktop)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 7,
+                child: Column(
+                  children: leftColCards,
                 ),
-                const SizedBox(height: 12),
-                if (hasGif)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: GanciColors.surfaceContainerHigh,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: GanciColors.glassBorder),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.check_circle_rounded, color: GanciColors.primary, size: 18),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            '${gif.name} • ${gif.frames.length} frames',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: GanciColors.primary,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                else
-                  const Text(
-                    'Belum ada GIF dipilih.',
-                    style: TextStyle(color: GanciColors.textMuted, fontSize: 12),
-                  ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                flex: 5,
+                child: Column(
+                  children: rightColCards,
+                ),
+              ),
+            ],
+          )
+        else
+          Column(
+            children: [
+              ...leftColCards,
+              const SizedBox(height: 14),
+              ...rightColCards,
+            ],
           ),
-        ),
-        const SizedBox(height: 14),
-        SizedBox(
-          width: double.infinity,
-          child: _StepCard(
-            title: 'GIF Settings',
-            outlined: true,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'Center Crop',
-                        style: TextStyle(
-                          color: GanciColors.textPrimary,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                    Switch(
-                      value: settings.centerCrop,
-                      activeColor: GanciColors.primary,
-                      onChanged: state.isGifEditorProcessing
-                          ? null
-                          : (value) {
-                              state.updateGifEditorSettings(
-                                settings.copyWith(centerCrop: value),
-                              );
-                            },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: GanciColors.surfaceContainerHigh,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: GanciColors.glassBorder),
-                  ),
-                  child: const Text(
-                    'Resize target: 240 x 240 px',
-                    style: TextStyle(
-                      color: GanciColors.primaryLight,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Fill Background',
-                  style: TextStyle(
-                    color: GanciColors.textPrimary,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _SelectionPill(
-                        active: settings.fillColor == GifFillColor.black,
-                        label: 'Black',
-                        onTap: state.isGifEditorProcessing
-                            ? null
-                            : () {
-                                state.updateGifEditorSettings(
-                                  settings.copyWith(fillColor: GifFillColor.black),
-                                );
-                              },
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _SelectionPill(
-                        active: settings.fillColor == GifFillColor.white,
-                        label: 'White',
-                        onTap: state.isGifEditorProcessing
-                            ? null
-                            : () {
-                                state.updateGifEditorSettings(
-                                  settings.copyWith(fillColor: GifFillColor.white),
-                                );
-                              },
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Optimization Method',
-                  style: TextStyle(
-                    color: GanciColors.textPrimary,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<GifOptimizationMethod>(
-                  value: settings.optimizationMethod,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                    filled: true,
-                    fillColor: GanciColors.surfaceContainerHigh,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide(color: GanciColors.glassBorder),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide(color: GanciColors.glassBorder),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide(color: GanciColors.primary, width: 1.4),
-                    ),
-                  ),
-                  items: const [
-                    DropdownMenuItem(
-                      value: GifOptimizationMethod.lossy,
-                      child: Text('Lossy Compression'),
-                    ),
-                  ],
-                  onChanged: state.isGifEditorProcessing
-                      ? null
-                      : (value) {
-                          if (value == null) return;
-                          state.updateGifEditorSettings(
-                            settings.copyWith(optimizationMethod: value),
-                            autoProcess: false,
-                          );
-                        },
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'Compression',
-                        style: TextStyle(
-                          color: GanciColors.textPrimary,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: GanciColors.surfaceContainerHigh,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: GanciColors.glassBorder),
-                      ),
-                      child: Text(
-                        '${settings.compressionLevel}',
-                        style: const TextStyle(
-                          color: GanciColors.primaryLight,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    activeTrackColor: GanciColors.primary,
-                    inactiveTrackColor: GanciColors.outlineVariant,
-                    thumbColor: GanciColors.primary,
-                    overlayColor: GanciColors.primary.withOpacity(0.12),
-                  ),
-                  child: Slider(
-                    min: 1,
-                    max: 100,
-                    divisions: 99,
-                    value: settings.compressionLevel.toDouble(),
-                    onChanged: state.isGifEditorProcessing
-                        ? null
-                        : (value) {
-                            state.updateGifEditorSettings(
-                              settings.copyWith(compressionLevel: value.round()),
-                              autoProcess: false,
-                            );
-                          },
-                    onChangeEnd: state.isGifEditorProcessing
-                        ? null
-                        : (_) {
-                            state.processGifEditor(showToast: false);
-                          },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 14),
-        SizedBox(
-          width: double.infinity,
-          child: _StepCard(
-            title: 'Process & Save',
-            outlined: true,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _PrimaryActionButton(
-                  icon: state.isGifEditorProcessing
-                      ? Icons.hourglass_top_rounded
-                      : Icons.auto_fix_high_rounded,
-                  label: state.isGifEditorProcessing ? 'Processing...' : 'Process GIF',
-                  onTap: (!hasGif || state.isGifEditorProcessing)
-                      ? null
-                      : () => state.processGifEditor(),
-                ),
-                const SizedBox(height: 12),
-                AnimatedOpacity(
-                  opacity: state.isGifEditorProcessing ? 0.45 : 1,
-                  duration: const Duration(milliseconds: 180),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: (!hasGif || state.isGifEditorProcessing)
-                          ? null
-                          : () async {
-                              final baseName = gif.name.contains('.')
-                                  ? gif.name.substring(0, gif.name.lastIndexOf('.'))
-                                  : gif.name;
-                              final customName = await _showRenameDialog(
-                                context,
-                                '${baseName}_optimized',
-                              );
-                              if (customName == null) return;
+      ],
+    );
+  }
 
-                              final result = await state.saveOptimizedGif(
-                                customName: customName.isEmpty ? null : customName,
-                              );
-                              if (!context.mounted) return;
-                              if (result.path.isEmpty) {
-                                AppToast.show(
-                                  context,
-                                  'Gagal save optimized GIF',
-                                  isError: true,
-                                );
-                              } else {
-                                AppToast.show(
-                                  context,
-                                  '${result.fileName} disimpan',
-                                );
-                              }
-                            },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: GanciColors.primary,
-                        foregroundColor: Colors.white,
-                        disabledBackgroundColor:
-                            GanciColors.primary.withOpacity(0.65),
-                        disabledForegroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      icon: state.isGifEditorProcessing
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.save_alt_rounded),
-                      label: Text(
-                        state.isGifEditorProcessing
-                            ? 'Saving Optimized GIF...'
-                            : 'Save Optimized GIF',
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+  Widget _buildStatRow(GanciTheme t, IconData icon, String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 16, color: t.textSecondary),
+            const SizedBox(width: 8),
+            Text(label, style: TextStyle(color: t.textSecondary, fontSize: 12, fontWeight: FontWeight.w500)),
+          ],
         ),
-        const SizedBox(height: 14),
-        SizedBox(
-          width: double.infinity,
-          child: _StepCard(
-            title: 'Preview',
-            outlined: true,
-            child: hasGif
-              ? PreviewWidget(
-                frames: gif.frames
-                  .map((f) => f.sourceImage)
-                  .toList(growable: false),
-                isGif: true,
-                )
-                : const Text(
-                    'Pilih GIF terlebih dahulu untuk melihat preview.',
-                    style: TextStyle(color: GanciColors.textMuted, fontSize: 12),
-                  ),
-          ),
-        ),
+        Text(value, style: TextStyle(color: t.textPrimary, fontSize: 12, fontWeight: FontWeight.w600, fontFamily: 'JetBrains Mono')),
       ],
     );
   }
@@ -947,7 +1230,7 @@ class _SidebarMenu extends StatelessWidget {
 
     final t = GanciTheme.of(context);
     final content = Container(
-      width: 200,
+      width: 250,
       decoration: BoxDecoration(
         color: t.surfaceContainer,
         border: Border(right: BorderSide(color: t.glassBorder)),
@@ -955,42 +1238,40 @@ class _SidebarMenu extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 24),
-          // Brand header
+          const SizedBox(height: 32),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Row(
               children: [
                 Container(
-                  width: 36, height: 36,
+                  width: 42, height: 42,
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(12),
                     gradient: LinearGradient(
                       begin: Alignment.topLeft, end: Alignment.bottomRight,
-                      colors: [t.primary, t.primaryContainer],
+                      colors: [t.primary, t.primary.withValues(alpha: 0.7)],
                     ),
-                    boxShadow: [BoxShadow(color: t.primary.withOpacity(0.3), blurRadius: 12)],
+                    boxShadow: [
+                      BoxShadow(
+                        color: t.primary.withValues(alpha: 0.3),
+                        blurRadius: 14,
+                        offset: const Offset(0, 4),
+                      )
+                    ],
                   ),
-                  child: const Icon(Icons.diamond_rounded, size: 20, color: Colors.white),
+                  child: const Icon(Icons.diamond_rounded, size: 24, color: Colors.white),
                 ),
-                const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Ganci', style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w700, fontSize: 18, fontFamily: 'Inter')),
-                    Text('v1.0.0', style: TextStyle(color: t.textMuted.withOpacity(0.6), fontSize: 11, fontFamily: 'Inter')),
-                  ],
-                ),
+                const SizedBox(width: 14),
+                Text('Ganci', style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w800, fontSize: 22, fontFamily: 'Inter', letterSpacing: -0.5)),
               ],
             ),
           ),
-          const SizedBox(height: 28),
-          // Main menu section
+          const SizedBox(height: 36),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Text('MAIN MENU', style: TextStyle(color: t.textMuted.withOpacity(0.5), fontWeight: FontWeight.w600, fontSize: 10, fontFamily: 'Inter', letterSpacing: 1.2)),
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Text('MAIN MENU', style: TextStyle(color: t.textMuted.withValues(alpha: 0.7), fontWeight: FontWeight.w700, fontSize: 11, fontFamily: 'Inter', letterSpacing: 1.5)),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           _NavTile(icon: Icons.home_rounded, label: 'Home', isActive: selectedTab == _MenuTab.home, onTap: () => handleSelect(_MenuTab.home)),
           const SizedBox(height: 4),
           _NavTile(icon: Icons.image_rounded, label: 'Image Converter', isActive: selectedTab == _MenuTab.imageConverter, onTap: () => handleSelect(_MenuTab.imageConverter)),
@@ -1002,54 +1283,13 @@ class _SidebarMenu extends StatelessWidget {
           _NavTile(icon: Icons.sensors_rounded, label: 'ESP Bridge', isActive: selectedTab == _MenuTab.espBridge, onTap: () => handleSelect(_MenuTab.espBridge)),
           const Spacer(),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Text('TOOLS', style: TextStyle(color: t.textMuted.withOpacity(0.5), fontWeight: FontWeight.w600, fontSize: 10, fontFamily: 'Inter', letterSpacing: 1.2)),
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Text('TOOLS', style: TextStyle(color: t.textMuted.withValues(alpha: 0.7), fontWeight: FontWeight.w700, fontSize: 11, fontFamily: 'Inter', letterSpacing: 1.5)),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           _NavTile(icon: Icons.settings_rounded, label: 'Settings', isActive: false, onTap: () {}),
           _NavTile(icon: Icons.info_outline_rounded, label: 'About', isActive: false, onTap: () {}),
-          const SizedBox(height: 12),
-          // Theme toggle — clean compact row
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Consumer<ThemeProvider>(
-              builder: (context, tp, _) {
-                return Material(
-                  color: Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () => tp.toggle(),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: t.primary.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: t.glassBorder),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            tp.isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
-                            size: 18, color: t.primaryLight,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              tp.isDark ? 'Dark Mode' : 'Light Mode',
-                              style: TextStyle(fontSize: 12, color: t.textSecondary, fontFamily: 'Inter', fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                          Icon(Icons.swap_horiz_rounded, size: 16, color: t.textMuted),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
         ],
       ),
     );
@@ -1057,7 +1297,7 @@ class _SidebarMenu extends StatelessWidget {
     final hasDrawer = Scaffold.maybeOf(context)?.hasDrawer ?? false;
     if (hasDrawer) {
       return Drawer(
-        width: 200,
+        width: 250,
         backgroundColor: t.surfaceContainer,
         shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
         child: content,
@@ -1079,31 +1319,44 @@ class _NavTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = GanciTheme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
           onTap: onTap,
-          splashColor: t.primary.withOpacity(0.1),
-          highlightColor: t.primary.withOpacity(0.05),
+          splashColor: t.primary.withValues(alpha: 0.1),
+          highlightColor: t.primary.withValues(alpha: 0.05),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
-              color: isActive ? t.primary.withOpacity(0.15) : Colors.transparent,
-              border: isActive ? Border.all(color: t.primary.withOpacity(0.25)) : null,
+              color: isActive ? t.primary.withValues(alpha: 0.12) : Colors.transparent,
             ),
             child: Row(children: [
-              Icon(icon, size: 20, color: isActive ? t.primaryLight : t.textMuted),
-              const SizedBox(width: 12),
+              Icon(icon, size: 22, color: isActive ? t.primary : t.textMuted.withValues(alpha: 0.8)),
+              const SizedBox(width: 14),
               Expanded(
                 child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: isActive ? t.primaryLight : t.textSecondary, fontWeight: isActive ? FontWeight.w600 : FontWeight.w500, fontSize: 13, fontFamily: 'Inter')),
+                  style: TextStyle(
+                    color: isActive ? t.primary : t.textSecondary, 
+                    fontWeight: isActive ? FontWeight.w700 : FontWeight.w500, 
+                    fontSize: 14, 
+                    fontFamily: 'Inter',
+                  ),
+                ),
               ),
+              if (isActive)
+                Container(
+                  width: 4,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    color: t.primary,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                )
             ]),
           ),
         ),
@@ -1124,10 +1377,16 @@ class _StepCard extends StatelessWidget {
     final t = GanciTheme.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: t.surfaceContainer,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: t.glassBorder),
-        boxShadow: [BoxShadow(color: t.glassGlow, blurRadius: 24, offset: const Offset(0, 8))],
+        color: t.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: t.outlineVariant.withOpacity(0.5)),
+        boxShadow: [
+          BoxShadow(
+            color: t.primary.withOpacity(0.03),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1135,11 +1394,11 @@ class _StepCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             decoration: BoxDecoration(
-              color: t.primary.withOpacity(0.06),
-              borderRadius: const BorderRadius.only(topLeft: Radius.circular(18), topRight: Radius.circular(18)),
-              border: Border(bottom: BorderSide(color: t.glassBorder)),
+              color: t.surfaceContainerLow,
+              borderRadius: const BorderRadius.only(topLeft: Radius.circular(16), topRight: Radius.circular(16)),
+              border: Border(bottom: BorderSide(color: t.outlineVariant.withOpacity(0.3))),
             ),
-            child: Text(title, style: TextStyle(color: t.primaryLight, fontSize: 15, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+            child: Text(title, style: TextStyle(color: t.primary, fontSize: 14, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
           ),
           Padding(padding: const EdgeInsets.all(20), child: child),
         ],
@@ -1294,3 +1553,11 @@ class _PrimaryActionButton extends StatelessWidget {
   }
 }
 
+class _FeatureItem {
+  final IconData icon;
+  final String title;
+  final String desc;
+  final Color color;
+  final _MenuTab tab;
+  const _FeatureItem(this.icon, this.title, this.desc, this.color, this.tab);
+}
