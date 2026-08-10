@@ -27,6 +27,18 @@ class MainActivity : FlutterActivity() {
 	override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
 		super.configureFlutterEngine(flutterEngine)
 
+        // Start Foreground Service safely
+        try {
+            val serviceIntent = Intent(this, GanciForegroundService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Could not start foreground service: ${e.message}")
+        }
+
 		MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PERMISSION_CHANNEL)
 			.setMethodCallHandler { call, result ->
 				if (call.method == "isNotificationListenerEnabled") {
@@ -91,22 +103,16 @@ class MainActivity : FlutterActivity() {
 		return try {
 			val mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
 			val componentName = ComponentName(this, MediaNotificationListener::class.java)
-
 			val controllers = mediaSessionManager.getActiveSessions(componentName)
-			if (controllers.isNotEmpty()) {
-				val controller = controllers[0]
+
+			val controller = if (controllers.isNotEmpty()) controllers[0] else MediaNotificationListener.activeController
+			if (controller != null) {
 				val metadata = controller.metadata
 				val playbackState = controller.playbackState
 
-				var thumbnailBase64 = ""
-				metadata?.let {
-					val artwork = it.getBitmap(MediaMetadata.METADATA_KEY_ART) ?: it.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
-					if (artwork != null) {
-						val byteArrayOutputStream = ByteArrayOutputStream()
-						artwork.compress(Bitmap.CompressFormat.PNG, 100, byteArrayOutputStream)
-						val byteArray = byteArrayOutputStream.toByteArray()
-						thumbnailBase64 = Base64.encodeToString(byteArray, Base64.DEFAULT)
-					}
+				var thumbnailBase64 = MediaNotificationListener.extractThumbnail(metadata, this)
+				if (thumbnailBase64.isEmpty()) {
+					thumbnailBase64 = MediaNotificationListener.cachedThumbnail
 				}
 
 				var currentPositionMs = playbackState?.position ?: 0L
@@ -123,6 +129,20 @@ class MainActivity : FlutterActivity() {
 					"isPlaying" to (playbackState?.state == PlaybackState.STATE_PLAYING),
 					"positionMs" to currentPositionMs,
 					"durationMs" to (metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L)
+				)
+			} else if (MediaNotificationListener.cachedTitle.isNotEmpty()) {
+				var currentPositionMs = MediaNotificationListener.cachedPositionMs
+				if (MediaNotificationListener.cachedIsPlaying) {
+					val timeDelta = (System.nanoTime() - MediaNotificationListener.cachedStateTimestamp) / 1000000L
+					currentPositionMs += timeDelta
+				}
+				mapOf(
+					"track" to MediaNotificationListener.cachedTitle,
+					"artist" to MediaNotificationListener.cachedArtist,
+					"thumbnailUrl" to MediaNotificationListener.cachedThumbnail,
+					"isPlaying" to MediaNotificationListener.cachedIsPlaying,
+					"positionMs" to currentPositionMs,
+					"durationMs" to MediaNotificationListener.cachedDurationMs
 				)
 			} else {
 				mapOf(

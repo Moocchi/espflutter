@@ -40,6 +40,7 @@ class SystemMediaBridgeService {
   final _mediaUpdateController = StreamController<MediaInfo>.broadcast();
   Stream<MediaInfo> get mediaStream => _mediaUpdateController.stream;
   MediaInfo? _lastEmittedInfo;
+  MediaInfo? get currentInfo => _lastEmittedInfo;
 
   bool _hasPermission = false;
   bool get hasPermission => _hasPermission;
@@ -71,6 +72,9 @@ class SystemMediaBridgeService {
     if (_hasPermission && _bridgeActive) {
       _startPolling();
     }
+
+    // Inisialisasi koneksi BLE otomatis saat aplikasi dibuka
+    unawaited(_bleService.scanAndConnect());
   }
 
   Future<void> setBridgeActive(bool active) async {
@@ -307,15 +311,23 @@ class SystemMediaBridgeService {
         info.track != _currentTitle || info.artist != _currentArtist;
     final statusChanged = info.isPlaying != _isPlaying;
     final durationChanged = info.duration > 0 && info.duration != _currentDuration;
+    
+    // Apakah kita butuh fetch lirik karena sebelumnya gagal dan cooldown sudah selesai?
+    final lyricsKey = '${info.track.trim().toLowerCase()}|${info.artist.trim().toLowerCase()}';
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final needsRetry = !_lyricsService.hasLyrics && 
+                       _lyricsCooldownUntilMs > 0 && 
+                       nowMs > _lyricsCooldownUntilMs &&
+                       (_lastLyricsKey.isEmpty || lyricsKey == _lastLyricsKey);
 
-    if (songChanged || durationChanged) {
+    if (songChanged || durationChanged || needsRetry) {
       _currentTitle = info.track;
       _currentArtist = info.artist;
       _currentDuration = info.duration > 0 ? info.duration : _currentDuration;
       _currentPosition = info.position < 0 ? 0 : info.position;
       if (kDebugMode) print('Song: ${info.track} | artist: ${info.artist}');
 
-      if (_bleService.currentStatus == BleStatus.connected) {
+      if (_bleService.currentStatus == BleStatus.connected && (songChanged || durationChanged)) {
         await _bleService.sendSongInfo(
           _currentTitle,
           _currentArtist,
@@ -323,13 +335,21 @@ class SystemMediaBridgeService {
         );
       }
 
-      // Fetch lirik baru di background (hanya jika lagu benar-benar ganti)
-      if (songChanged) {
+      // Fetch lirik baru atau retry
+
+      if (_currentTitle.isNotEmpty && _currentArtist.isNotEmpty) {
         final lyricsKey =
             '${_currentTitle.trim().toLowerCase()}|${_currentArtist.trim().toLowerCase()}';
-        if (lyricsKey != _lastLyricsKey) {
+            
+        final nowMs = DateTime.now().millisecondsSinceEpoch;
+        final canFetch = lyricsKey != _lastLyricsKey && nowMs > _lyricsCooldownUntilMs;
+        
+        if (canFetch) {
           _lastLyricsKey = lyricsKey;
           _lyricsService.clear();
+          if (_bleService.currentStatus == BleStatus.connected) {
+            _bleService.sendLyrics("", "...", ""); // Loading indicator
+          }
           _lastLyricsDurationMs = info.duration > 0 ? info.duration : 0;
           
           // Me-passing durasi asli dari Kotlin ke API Lrclib karena Lrclib butuh durasi untuk pencarian yang sangat 100% akurat
@@ -353,11 +373,18 @@ class SystemMediaBridgeService {
                   _lyricsService.nextLine,
                 );
               } else {
-                _lyricsCooldownUntilMs = 0;
-                // Beritahu ESP jika lirik benar-benar tidak ditemukan / gagal diambil
-                _bleService.sendLyrics("", "Lyric Not Found", "");
+                // JIKA GAGAL: Beri cooldown 5 detik, lalu reset _lastLyricsKey agar mau MENCOBA LAGI otomatis
+                _lyricsCooldownUntilMs = DateTime.now().millisecondsSinceEpoch + 5000;
+                _lastLyricsKey = ''; // Kosongkan agar bisa coba lagi nanti
                 
-                // Hapus tulisan 'Lyrics not found' setelah tampil 10 detik
+                // Cek apakah error karena internet atau benar-benar lirik tidak ada
+                final isNetworkError = _lyricsService.lastError != null && _lyricsService.lastError!.contains('Failed host lookup');
+                final errorMessage = isNetworkError ? "No Internet/DNS Error" : "Lyric Not Found";
+                
+                // Beritahu ESP jika lirik benar-benar tidak ditemukan / gagal diambil
+                _bleService.sendLyrics("", errorMessage, "");
+                
+                // Hapus tulisan error setelah tampil 10 detik
                 Future.delayed(const Duration(seconds: 10), () {
                   // Pastikan lagu yang diputar di timer ini masih sama dengan lagu saat not found tadi
                   final currentKeyCheck = '${_currentTitle.trim().toLowerCase()}|${_currentArtist.trim().toLowerCase()}';
@@ -365,6 +392,12 @@ class SystemMediaBridgeService {
                     _bleService.sendLyrics("", "", "");
                   }
                 });
+              }
+            } else {
+              // Jika putus koneksi saat mencari, ijinkan cari lagi nanti
+              if (!found) {
+                _lastLyricsKey = '';
+                _lyricsCooldownUntilMs = DateTime.now().millisecondsSinceEpoch + 5000;
               }
             }
           });
@@ -393,14 +426,33 @@ class SystemMediaBridgeService {
           }
           if (_bleService.currentStatus == BleStatus.connected) {
             if (found) {
-              final msActualPosition =
-                  FlutterMediaController.getEstimatedPositionMs();
+              final msActualPosition = FlutterMediaController.getEstimatedPositionMs();
               _lyricsService.updatePosition(msActualPosition);
               _bleService.sendLyrics(
                 _lyricsService.prevLine,
                 _lyricsService.activeLine,
                 _lyricsService.nextLine,
               );
+            } else {
+              // GAGAL DI RETRY DURASI: Beri cooldown 5 detik, reset key agar bisa coba lagi
+              _lyricsCooldownUntilMs = DateTime.now().millisecondsSinceEpoch + 5000;
+              _lastLyricsKey = '';
+              
+              final isNetworkError = _lyricsService.lastError != null && _lyricsService.lastError!.contains('Failed host lookup');
+              final errorMessage = isNetworkError ? "No Internet/DNS Error" : "Lyric Not Found";
+              
+              _bleService.sendLyrics("", errorMessage, "");
+              Future.delayed(const Duration(seconds: 10), () {
+                final currentKeyCheck = '${_currentTitle.trim().toLowerCase()}|${_currentArtist.trim().toLowerCase()}';
+                if (_bleService.currentStatus == BleStatus.connected && currentKeyCheck == _lastLyricsKey) {
+                  _bleService.sendLyrics("", "", "");
+                }
+              });
+            }
+          } else {
+            if (!found) {
+              _lastLyricsKey = '';
+              _lyricsCooldownUntilMs = DateTime.now().millisecondsSinceEpoch + 5000;
             }
           }
         });

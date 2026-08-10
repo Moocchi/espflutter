@@ -205,7 +205,7 @@ class _ToastWidgetState extends State<_ToastWidget>
 
   @override
   Widget build(BuildContext context) {
-    final baseBottom = MediaQuery.of(context).padding.bottom + 44;
+    final baseBottom = MediaQuery.of(context).padding.bottom + 50;
 
     return AnimatedBuilder(
       animation: _ctrl,
@@ -213,6 +213,19 @@ class _ToastWidgetState extends State<_ToastWidget>
         // _slide.value: -80 → 0, so bottom goes from (base-80) → base (slides up)
         final bottom = baseBottom + _slide.value;
         final hasAction = widget.actionLabel != null;
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        final bg = widget.isError
+            ? (isDark ? const Color(0xFF3B1F2B) : const Color(0xFFFDE8E8))
+            : (Theme.of(context).snackBarTheme.backgroundColor ?? GanciColors.surfaceContainer);
+        final borderCol = widget.isError
+            ? (isDark ? const Color(0xFFE53935).withValues(alpha: 0.6) : const Color(0xFFE53935).withValues(alpha: 0.6))
+            : (Theme.of(context).snackBarTheme.shape is RoundedRectangleBorder
+                ? ((Theme.of(context).snackBarTheme.shape as RoundedRectangleBorder).side.color)
+                : GanciColors.glassBorder);
+        final textCol = widget.isError
+            ? (isDark ? const Color(0xFFFFB4AB) : const Color(0xFF9B1C1C))
+            : (Theme.of(context).snackBarTheme.contentTextStyle?.color ?? GanciColors.textPrimary);
+
         final innerContent = Material(
             color: Colors.transparent,
             child: FadeTransition(
@@ -226,9 +239,9 @@ class _ToastWidgetState extends State<_ToastWidget>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 18, vertical: 14),
                       decoration: BoxDecoration(
-                        color: GanciColors.surfaceContainerHigh,
+                        color: bg,
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: GanciColors.glassBorder),
+                        border: Border.all(color: borderCol),
                         boxShadow: [
                           BoxShadow(
                             color: Colors.black.withValues(alpha: 0.16),
@@ -243,8 +256,8 @@ class _ToastWidgetState extends State<_ToastWidget>
                           Flexible(
                             child: Text(
                               widget.message,
-                              style: const TextStyle(
-                                color: GanciColors.textPrimary,
+                              style: TextStyle(
+                                color: textCol,
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
                               ),

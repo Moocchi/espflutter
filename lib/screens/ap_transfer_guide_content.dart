@@ -8,7 +8,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'dart:async';
 import '../services/esp_ap_transfer_service.dart';
+import '../esp_bridge/services/ble_service.dart';
 import '../widgets/app_toast.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
@@ -16,11 +18,13 @@ import '../providers/app_state.dart';
 class ApTransferGuideContent extends StatefulWidget {
   final bool showMenuButton;
   final VoidCallback? onMenuTap;
+  final VoidCallback? onNavigateToSettings;
 
   const ApTransferGuideContent({
     super.key,
     required this.showMenuButton,
     this.onMenuTap,
+    this.onNavigateToSettings,
   });
 
   @override
@@ -28,15 +32,9 @@ class ApTransferGuideContent extends StatefulWidget {
 }
 
 class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
-  final EspApTransferService _service = EspApTransferService();
-  static const List<String> _baseCandidates = [
-    'http://192.168.4.1',
-    'http://ganci.local',
-  ];
-
-  String _lastConnectedBase = _baseCandidates.first;
   final TextEditingController _targetDirCtrl = TextEditingController(text: '/');
   String? _preferredInitialDirectory;
+  StreamSubscription<BleStatus>? _bleSub;
 
   EspApStatus? _status;
   List<EspFsEntry> _entries = const [];
@@ -46,6 +44,8 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
   bool _loadingStatus = false;
   bool _loadingList = false;
   bool _uploading = false;
+  double _uploadProgress = 0.0;
+  String _uploadStatus = '';
   bool _isConnected = false;
   bool _hasFetchedListOnce = false;
   bool _obscurePassword = true;
@@ -54,32 +54,34 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
   void initState() {
     super.initState();
     _prepareInitialDirectory();
+    _bleSub = BleService().statusStream.listen((status) {
+      if (mounted) {
+        final wasConnected = _isConnected;
+        setState(() {
+          _isConnected = (status == BleStatus.connected);
+        });
+        if (status == BleStatus.connected && !wasConnected) {
+          _refreshAll(showToast: false);
+        }
+      }
+    });
+    _isConnected = (BleService().currentStatus == BleStatus.connected);
+    if (_isConnected) {
+      _refreshAll(showToast: false);
+    } else {
+      BleService().scanAndConnect();
+    }
   }
 
   @override
   void dispose() {
+    _bleSub?.cancel();
     _targetDirCtrl.dispose();
     super.dispose();
   }
 
   void _toast(String message, {bool isError = false}) {
     AppToast.show(context, message, isError: isError);
-  }
-
-  Future<T> _withBaseFallback<T>(Future<T> Function(String baseUrl) action) async {
-    Object? lastError;
-    for (final base in _baseCandidates) {
-      try {
-        final result = await action(base);
-        if (mounted && _lastConnectedBase != base) {
-          setState(() => _lastConnectedBase = base);
-        }
-        return result;
-      } catch (e) {
-        lastError = e;
-      }
-    }
-    throw Exception(lastError?.toString() ?? 'Koneksi ke ESP32 gagal.');
   }
 
   Future<void> _prepareInitialDirectory() async {
@@ -110,13 +112,29 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
   Future<bool> _refreshStatus({bool showToast = true}) async {
     setState(() => _loadingStatus = true);
     try {
-      final status = await _withBaseFallback(_service.getStatus);
-      if (!mounted) return false;
-      setState(() => _status = status);
-      if (showToast) {
-        _toast('Status OK');
+      final ble = BleService();
+      // Only check current status - do NOT call ensureConnectedAndReady here
+      if (ble.currentStatus == BleStatus.connected) {
+        // Try to get sysInfo but don't fail if it's unavailable
+        final sysJson = await ble.fetchSysInfo();
+        if (sysJson != null && mounted) {
+          setState(() {
+            _status = EspApStatus.fromJson(sysJson);
+            _isConnected = true;
+          });
+          if (showToast) _toast('Status BLE OK');
+          return true;
+        }
+        // SysInfo unavailable but BLE IS connected - still mark as connected
+        if (mounted) {
+          setState(() => _isConnected = true);
+        }
+        if (showToast) _toast('BLE Terhubung (stats tidak tersedia)');
+        return true;
       }
-      return true;
+      if (mounted) setState(() => _isConnected = false);
+      if (showToast) _toast('BLE tidak terhubung', isError: true);
+      return false;
     } catch (e) {
       if (showToast) {
         _toast('Status gagal', isError: true);
@@ -130,17 +148,22 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
   Future<bool> _refreshList({bool showToast = true}) async {
     setState(() => _loadingList = true);
     try {
-      final entries = await _withBaseFallback(_service.listFiles);
-      if (!mounted) return false;
-      entries.sort((a, b) => a.name.compareTo(b.name));
-      setState(() {
-        _entries = entries;
-        _hasFetchedListOnce = true;
-      });
-      if (showToast) {
-        _toast('List OK');
+      final ble = BleService();
+      if (ble.currentStatus == BleStatus.connected) {
+        if (mounted) {
+          final bleList = await ble.listFiles();
+          setState(() {
+            _entries = bleList;
+            _hasFetchedListOnce = true;
+            _isConnected = true;
+          });
+        }
+        if (showToast) _toast('Daftar file diperbarui');
+        return true;
       }
-      return true;
+      if (mounted) setState(() => _isConnected = false);
+      if (showToast) _toast('BLE tidak terhubung', isError: true);
+      return false;
     } catch (e) {
       if (showToast) {
         _toast('List gagal', isError: true);
@@ -152,14 +175,20 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
   }
 
   Future<void> _refreshAll({bool showToast = true}) async {
+    final ble = BleService();
+    // If not connected, try to connect once
+    if (ble.currentStatus != BleStatus.connected) {
+      await ble.scanAndConnect();
+    }
     final statusOk = await _refreshStatus(showToast: false);
-    final listOk = await _refreshList(showToast: false);
-    if (statusOk && listOk) {
+    if (statusOk) {
       if (mounted) setState(() => _isConnected = true);
-      if (showToast) _toast('Terhubung ($_lastConnectedBase)');
+      if (showToast) {
+        _toast('Terhubung via BLE');
+      }
     } else {
       if (mounted) setState(() => _isConnected = false);
-      if (showToast) _toast('Gagal koneksi ESP32', isError: true);
+      if (showToast) _toast('Gagal koneksi BLE ESP32', isError: true);
     }
   }
 
@@ -696,32 +725,30 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
       }
     }
 
-    setState(() => _uploading = true);
+    setState(() {
+      _uploading = true;
+      _uploadProgress = 0.0;
+      _uploadStatus = 'Mempersiapkan...';
+    });
     final effectiveTargetDir = _buildEffectiveTargetDirectory();
     try {
-      await _service.uploadFiles(
-        _lastConnectedBase,
-        _selectedFiles,
-        targetDirectory: effectiveTargetDir,
-      );
-      if (!mounted) return;
-      _toast('Upload berhasil (${_selectedFiles.length})');
-      Provider.of<AppState>(context, listen: false).incrementFilesSynced(_selectedFiles.length);
-      setState(() {
-        _selectedFiles = const [];
-        _selectedFromFolder = false;
-        _selectedFolderName = null;
-      });
-      await _refreshAll(showToast: false);
-    } catch (e) {
-      try {
-        await _withBaseFallback((base) => _service.uploadFiles(
-              base,
-              _selectedFiles,
-            targetDirectory: effectiveTargetDir,
-            ));
+      final ble = BleService();
+      if (ble.currentStatus == BleStatus.connected) {
+        _toast('Mengirim file via BLE...');
+        await ble.uploadFilesBle(
+          _selectedFiles,
+          targetDirectory: effectiveTargetDir,
+          onProgress: (current, total, progress) {
+            if (mounted) {
+              setState(() {
+                _uploadProgress = progress;
+                _uploadStatus = 'File $current dari $total (${(progress * 100).toStringAsFixed(0)}%)';
+              });
+            }
+          },
+        );
         if (!mounted) return;
-        _toast('Upload berhasil (${_selectedFiles.length})');
+        _toast('Upload BLE berhasil (${_selectedFiles.length})');
         Provider.of<AppState>(context, listen: false).incrementFilesSynced(_selectedFiles.length);
         setState(() {
           _selectedFiles = const [];
@@ -729,8 +756,14 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
           _selectedFolderName = null;
         });
         await _refreshAll(showToast: false);
-      } catch (fallbackError) {
-        _toast('Upload gagal', isError: true);
+      } else {
+        _toast('Gagal: Bluetooth BLE tidak terhubung', isError: true);
+      }
+    } catch (e) {
+      if (e.toString().contains('Dibatalkan')) {
+        _toast('Upload dibatalkan');
+      } else {
+        _toast('Upload gagal: $e', isError: true);
       }
     } finally {
       if (mounted) setState(() => _uploading = false);
@@ -755,65 +788,99 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
   }
 
   Future<void> _deleteEntry(EspFsEntry entry) async {
-    bool isFolder = entry.isDir;
-    if (isFolder) {
-      _toast('Menghapus folder dan isinya...');
-    }
-    try {
-      if (isFolder) {
-        final prefix = '${entry.name}/';
-        final children = _entries.where((e) => e.name.startsWith(prefix) && e.name != entry.name).toList();
-        children.sort((a, b) => b.name.length.compareTo(a.name.length));
-        
-        for (var child in children) {
-          await _withBaseFallback((base) => _service.deletePath(base, child.name));
-        }
-      }
-      
-      await _withBaseFallback((base) => _service.deletePath(base, entry.name));
-      _toast('Delete berhasil');
-      await _refreshAll(showToast: false);
-    } catch (e) {
-      _toast('Delete gagal', isError: true);
-    }
-  }
-
-  Future<void> _deleteAll() async {
-    if (_entries.isEmpty) return;
-    
-    final bool? confirm = await showDialog<bool>(
+    final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete All Files?'),
-        content: const Text('Are you sure you want to delete all files from ESP32 SPIFFS?'),
+      builder: (c) => AlertDialog(
+        title: const Text('Hapus File?'),
+        content: Text('Yakin ingin menghapus ${entry.name}?'),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xFFBA1A1A)),
-            onPressed: () => Navigator.of(ctx).pop(true), 
-            child: const Text('Delete All'),
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Batal')),
+          TextButton(
+            onPressed: () => Navigator.pop(c, true),
+            child: Text('Hapus', style: TextStyle(color: GanciColors.error)),
           ),
         ],
       ),
     );
-
     if (confirm != true) return;
-
-    _toast('Menghapus semua file...');
-    try {
-      for (var entry in _entries) {
-        if (!entry.isDir) {
-          await _withBaseFallback((base) => _service.deletePath(base, entry.name));
-        }
-      }
-      for (var entry in _entries.where((e) => e.isDir).toList().reversed) {
-         await _withBaseFallback((base) => _service.deletePath(base, entry.name));
-      }
-      _toast('Semua file berhasil dihapus');
-      await _refreshAll(showToast: false);
-    } catch(e) {
-      _toast('Gagal menghapus beberapa file', isError: true);
+    
+    setState(() => _loadingList = true);
+    final success = await BleService().deleteFile(entry.name);
+    if (success) {
+      _toast('File dihapus');
+      await _refreshList(showToast: false);
+      await _refreshStatus(showToast: false);
+    } else {
+      _toast('Gagal menghapus file', isError: true);
+      setState(() => _loadingList = false);
     }
+  }
+
+  Future<void> _deleteAll() async {
+    _toast('Hapus semua file sekaligus belum didukung via BLE.');
+  }
+
+  Color _tempColor(double tempC) {
+    if (tempC < 50) return GanciColors.success;
+    if (tempC < 70) return GanciColors.warning;
+    return GanciColors.error;
+  }
+
+  Widget _buildUsageBar(
+    GanciTheme t, {
+    required IconData icon,
+    required String label,
+    required double used,
+    required double total,
+    required String unit,
+    required Color color,
+  }) {
+    final ratio = total > 0 ? (used / total).clamp(0.0, 1.0) : 0.0;
+    final pct = (ratio * 100).toStringAsFixed(0);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: t.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: t.glassBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, color: color, size: 15),
+                  const SizedBox(width: 6),
+                  Text(label, style: TextStyle(color: t.outline, fontSize: 12, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+                ],
+              ),
+              Text('$pct% Used', style: TextStyle(color: t.textSecondary, fontSize: 11, fontWeight: FontWeight.w500)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(5),
+            child: LinearProgressIndicator(
+              value: ratio,
+              backgroundColor: t.surfaceBright,
+              color: color,
+              minHeight: 8,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Used: ${used.toStringAsFixed(unit == "MB" ? 2 : 0)} $unit', style: TextStyle(color: t.textSecondary, fontSize: 11, fontFamily: 'JetBrains Mono')),
+              Text('Total: ${total.toStringAsFixed(unit == "MB" ? 2 : 0)} $unit', style: TextStyle(color: t.textSecondary, fontSize: 11, fontFamily: 'JetBrains Mono')),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -822,10 +889,10 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _HeaderSection(
+        _ApHeaderSection(
           showMenuButton: widget.showMenuButton,
           onMenuTap: widget.onMenuTap,
-          title: 'AP Transfer & Status',
+          title: 'Transfer File BLE',
         ),
         const SizedBox(height: 24),
         LayoutBuilder(
@@ -863,233 +930,284 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
   }
 
   Widget _buildLeftColumn(GanciTheme t) {
+    final bleConnected = BleService().currentStatus == BleStatus.connected;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // AP Connection Card
-        _GlassCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: t.primaryContainer,
-                      shape: BoxShape.circle,
+        // Connection Card (Only show when disconnected)
+        if (!bleConnected) ...[
+          _GlassCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: t.primaryContainer,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.bluetooth_disabled_rounded, color: Colors.white, size: 18),
                     ),
-                    child: const Icon(Icons.wifi_tethering, color: Colors.white, size: 18),
+                    const SizedBox(width: 12),
+                    Text('BLE Belum Terhubung', style: TextStyle(color: t.textPrimary, fontSize: 18, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Text('Hubungkan perangkat ESP32 Anda lewat Bluetooth Low Energy (BLE) untuk mulai mentransfer file dan melihat statistik memori.', style: TextStyle(color: t.textSecondary, fontSize: 14, fontFamily: 'Inter')),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: t.primary,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size(double.infinity, 48),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
-                  const SizedBox(width: 12),
-                  Text('AP Connection', style: TextStyle(color: t.textPrimary, fontSize: 18, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
-                ],
-              ),
-              const SizedBox(height: 16),
-              const Divider(height: 1, color: Colors.black12),
-              const SizedBox(height: 16),
-              Text('Connect your device to the ESP32 Access Point to begin transfer.', style: TextStyle(color: t.textSecondary, fontSize: 14, fontFamily: 'Inter')),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: t.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: t.glassBorder),
+                  onPressed: () {
+                    if (widget.onNavigateToSettings != null) {
+                      widget.onNavigateToSettings!();
+                    }
+                  },
+                  icon: const Icon(Icons.settings_rounded, size: 18),
+                  label: const Text('Buka Pengaturan', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, fontFamily: 'Inter')),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('SSID', style: TextStyle(color: t.outline, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 1.1)),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text('ESP32-Media-App', style: TextStyle(color: t.textPrimary, fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'JetBrains Mono')),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: t.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: t.glassBorder),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('PASSWORD', style: TextStyle(color: t.outline, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 1.1)),
-                        InkWell(
-                          onTap: () => setState(() => _obscurePassword = !_obscurePassword),
-                          child: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: t.primary, size: 18),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(_obscurePassword ? '********' : '12345678', style: TextStyle(color: t.textPrimary, fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'JetBrains Mono')),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 16),
-        // Endpoint Status Card
+          const SizedBox(height: 16),
+        ],
+        // ── ESP32 Status Dashboard ──────────────────────────────────────
         _GlassCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Header row with title + connection badge
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.router_outlined, color: t.outline, size: 20),
+                      Icon(Icons.developer_board_rounded, color: t.primary, size: 22),
                       const SizedBox(width: 8),
-                      Text('Endpoint Status', style: TextStyle(color: t.textPrimary, fontSize: 18, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+                      Text('ESP32 Status', style: TextStyle(color: t.textPrimary, fontSize: 18, fontWeight: FontWeight.w700, fontFamily: 'Inter')),
                     ],
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
-                      color: _isConnected ? GanciColors.success.withOpacity(0.15) : GanciColors.error.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(12),
+                      color: (_isConnected ? GanciColors.success : GanciColors.error).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: (_isConnected ? GanciColors.success : GanciColors.error).withValues(alpha: 0.3),
+                      ),
                     ),
                     child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Container(
-                          width: 8, height: 8,
+                          width: 7, height: 7,
                           decoration: BoxDecoration(
                             color: _isConnected ? GanciColors.success : GanciColors.error,
                             shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: (_isConnected ? GanciColors.success : GanciColors.error).withValues(alpha: 0.5),
+                                blurRadius: 6,
+                              ),
+                            ],
                           ),
                         ),
                         const SizedBox(width: 6),
-                        Text(_isConnected ? 'Connected' : 'Disconnected', style: TextStyle(color: _isConnected ? GanciColors.success : GanciColors.error, fontSize: 12, fontWeight: FontWeight.w600)),
+                        Text(
+                          _isConnected ? 'Connected' : 'Disconnected',
+                          style: TextStyle(
+                            color: _isConnected ? GanciColors.success : GanciColors.error,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            fontFamily: 'Inter',
+                          ),
+                        ),
                       ],
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 16),
+
+              // BLE status row
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
                   color: t.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: t.glassBorder),
                 ),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(_lastConnectedBase, style: TextStyle(color: t.textSecondary, fontSize: 13, fontFamily: 'JetBrains Mono')),
-                    Icon(_isConnected ? Icons.check_circle : Icons.error_outline, color: _isConnected ? GanciColors.success : GanciColors.error, size: 18),
+                    Icon(Icons.bluetooth_rounded, color: _isConnected ? GanciColors.success : t.outline, size: 18),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        BleService().currentStatus == BleStatus.connected ? 'Bluetooth Low Energy Connected' : 'BLE Disconnected',
+                        style: TextStyle(color: t.textSecondary, fontSize: 13, fontFamily: 'JetBrains Mono'),
+                      ),
+                    ),
+                    Icon(
+                      _isConnected ? Icons.check_circle_rounded : Icons.error_outline_rounded,
+                      color: _isConnected ? GanciColors.success : GanciColors.error,
+                      size: 18,
+                    ),
                   ],
                 ),
               ),
+
+              // Stats section - only if connected + data available
+              if (_status != null) ...[
+                const SizedBox(height: 16),
+                // Temperature + RAM Heap row
+                Row(
+                  children: [
+                    // Temperature card
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: t.surfaceContainerLow,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: t.glassBorder),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.thermostat_rounded, color: _tempColor(_status!.tempC), size: 16),
+                                const SizedBox(width: 6),
+                                Text('Suhu', style: TextStyle(color: t.outline, fontSize: 11, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '${_status!.tempC.toStringAsFixed(1)}°C',
+                              style: TextStyle(color: t.textPrimary, fontSize: 22, fontWeight: FontWeight.w700, fontFamily: 'JetBrains Mono'),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _status!.tempC < 50 ? 'Normal' : _status!.tempC < 70 ? 'Warm' : 'Hot!',
+                              style: TextStyle(color: _tempColor(_status!.tempC), fontSize: 11, fontWeight: FontWeight.w500),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    // Free Heap card
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: t.surfaceContainerLow,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: t.glassBorder),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.memory_rounded, color: t.primary, size: 16),
+                                const SizedBox(width: 6),
+                                Text('Free Heap', style: TextStyle(color: t.outline, fontSize: 11, fontWeight: FontWeight.w600, fontFamily: 'Inter')),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '${_status!.ramFreeKb.toStringAsFixed(0)} KB',
+                              style: TextStyle(color: t.textPrimary, fontSize: 22, fontWeight: FontWeight.w700, fontFamily: 'JetBrains Mono'),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'of ${_status!.ramTotalKb.toStringAsFixed(0)} KB total',
+                              style: TextStyle(color: t.outline, fontSize: 11, fontWeight: FontWeight.w500),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                // RAM Usage Bar
+                const SizedBox(height: 12),
+                _buildUsageBar(
+                  t,
+                  icon: Icons.memory_rounded,
+                  label: 'RAM',
+                  used: _status!.ramTotalKb - _status!.ramFreeKb,
+                  total: _status!.ramTotalKb,
+                  unit: 'KB',
+                  color: t.primary,
+                ),
+
+                // SD Card Storage Bar
+                const SizedBox(height: 10),
+                _buildUsageBar(
+                  t,
+                  icon: Icons.sd_storage_rounded,
+                  label: 'SD Card',
+                  used: _status!.fsUsedMb,
+                  total: _status!.fsTotalMb,
+                  unit: 'MB',
+                  color: const Color(0xFF7C6DD8),
+                ),
+              ],
+
+              // No stats available message
+              if (_isConnected && _status == null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: GanciColors.warning.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: GanciColors.warning.withValues(alpha: 0.2)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline_rounded, color: GanciColors.warning, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Statistik tidak tersedia di mode ini',
+                          style: TextStyle(color: t.textSecondary, fontSize: 12, fontFamily: 'Inter'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
               const SizedBox(height: 16),
+              // Refresh button
               ElevatedButton.icon(
                 onPressed: _loadingStatus || _loadingList ? null : _refreshAll,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: t.surfaceContainerHigh,
                   foregroundColor: t.primary,
                   minimumSize: const Size(double.infinity, 48),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   elevation: 0,
                 ),
-                icon: _loadingStatus || _loadingList 
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) 
-                    : const Icon(Icons.refresh),
-                label: Text(_loadingStatus || _loadingList ? 'Checking...' : 'Refresh / Test', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                icon: _loadingStatus || _loadingList
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.refresh_rounded),
+                label: Text(_loadingStatus || _loadingList ? 'Checking...' : 'Refresh / Test', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 16),
-        // Device Stats Bento
-        if (_status != null)
-          Row(
-            children: [
-              Expanded(
-                child: _GlassCard(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      Icon(Icons.memory, color: t.outline, size: 24),
-                      const SizedBox(height: 4),
-                      Text('Free Heap', style: TextStyle(color: t.outline, fontSize: 12, fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 4),
-                      Text('${_status!.ramFreeKb.toStringAsFixed(0)} KB', style: TextStyle(color: t.textPrimary, fontSize: 18, fontWeight: FontWeight.w600)),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _GlassCard(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      Icon(Icons.thermostat, color: t.outline, size: 24),
-                      const SizedBox(height: 4),
-                      Text('Core Temp', style: TextStyle(color: t.outline, fontSize: 12, fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 4),
-                      Text('${_status!.tempC.toStringAsFixed(1)}°C', style: TextStyle(color: t.textPrimary, fontSize: 18, fontWeight: FontWeight.w600)),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        if (_status != null) const SizedBox(height: 16),
-        if (_status != null)
-          _GlassCard(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.sd_storage_outlined, color: t.outline, size: 16),
-                        const SizedBox(width: 4),
-                        Text('SPIFFS Storage', style: TextStyle(color: t.outline, fontSize: 12, fontWeight: FontWeight.w600)),
-                      ],
-                    ),
-                    Text('${((_status!.fsUsedMb / _status!.fsTotalMb) * 100).toStringAsFixed(0)}% Used', style: TextStyle(color: t.textSecondary, fontSize: 14)),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: _status!.fsTotalMb > 0 ? (_status!.fsUsedMb / _status!.fsTotalMb) : 0,
-                    backgroundColor: t.surfaceBright,
-                    color: t.primary,
-                    minHeight: 10,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Free: ${_status!.fsFreeMb.toStringAsFixed(2)} MB', style: TextStyle(color: t.textSecondary, fontSize: 13, fontFamily: 'JetBrains Mono')),
-                    Text('Total: ${_status!.fsTotalMb.toStringAsFixed(2)} MB', style: TextStyle(color: t.textSecondary, fontSize: 13, fontFamily: 'JetBrains Mono')),
-                  ],
-                ),
-              ],
-            ),
-          ),
       ],
     );
   }
@@ -1161,6 +1279,42 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
                   ),
                 ],
               ),
+              if (_uploading) ...[
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      _uploadStatus,
+                      style: TextStyle(color: t.textPrimary, fontSize: 14, fontWeight: FontWeight.w500),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        BleService().cancelUpload();
+                        setState(() {
+                          _selectedFiles = const [];
+                        });
+                      },
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text('Batal', style: TextStyle(color: GanciColors.error, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: _uploadProgress,
+                    minHeight: 12,
+                    backgroundColor: t.outlineVariant.withOpacity(0.5),
+                    color: t.primary,
+                  ),
+                ),
+              ],
               if (_selectedFiles.isNotEmpty) ...[
                 const SizedBox(height: 16),
                 _buildPreviewExpandedUI(t),
@@ -1222,16 +1376,17 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
               Container(
                 padding: const EdgeInsets.all(16),
                 constraints: const BoxConstraints(minHeight: 300),
-                child: _loadingList 
-                  ? const Center(child: CircularProgressIndicator())
-                  : _entries.isEmpty 
-                    ? Center(
+                child: Stack(
+                  children: [
+                    if (_entries.isEmpty && !_loadingList)
+                      Center(
                         child: Text(
-                          _hasFetchedListOnce ? 'Storage ESP32 kosong.' : 'Belum ambil list. Tekan Test Connection dulu.',
+                          _hasFetchedListOnce ? 'Storage ESP32 kosong.' : 'Belum ambil list. Tekan Refresh dulu.',
                           style: TextStyle(color: t.outline, fontSize: 14),
                         ),
                       )
-                    : ListView.builder(
+                    else if (_entries.isNotEmpty)
+                      ListView.builder(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
                         itemCount: _entries.length,
@@ -1253,6 +1408,11 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
                             iconColor = GanciColors.warning;
                           }
                           
+                          final extIdx = entry.name.lastIndexOf('.');
+                          final nameNoExt = extIdx != -1 ? entry.name.substring(0, extIdx) : entry.name;
+                          final ext = extIdx != -1 ? entry.name.substring(extIdx) : '';
+                          final displayExt = nameNoExt.length > 20 ? ' $ext' : ext;
+                          
                           return Container(
                             margin: const EdgeInsets.only(bottom: 8),
                             padding: const EdgeInsets.all(12),
@@ -1263,19 +1423,38 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Row(
-                                  children: [
-                                    Icon(iconData, color: iconColor, size: 24),
-                                    const SizedBox(width: 12),
-                                    Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(entry.name, style: TextStyle(color: t.textPrimary, fontSize: 14, fontWeight: FontWeight.w500)),
-                                        Text(entry.isDir ? 'Directory' : _formatBytes(entry.size), style: TextStyle(color: t.outline, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.5)),
-                                      ],
-                                    ),
-                                  ],
+                                Expanded(
+                                  child: Row(
+                                    children: [
+                                      Icon(iconData, color: iconColor, size: 24),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Flexible(
+                                                  child: Text(
+                                                    nameNoExt,
+                                                    style: TextStyle(color: t.textPrimary, fontSize: 14, fontWeight: FontWeight.w500),
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  displayExt,
+                                                  style: TextStyle(color: t.textPrimary, fontSize: 14, fontWeight: FontWeight.w500),
+                                                ),
+                                              ],
+                                            ),
+                                            Text(entry.isDir ? 'Directory' : _formatBytes(entry.size), style: TextStyle(color: t.outline, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.5)),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
+                                const SizedBox(width: 8),
                                 IconButton(
                                   icon: Icon(Icons.delete_outline, color: t.outline, size: 20),
                                   hoverColor: GanciColors.error.withOpacity(0.1),
@@ -1287,6 +1466,15 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
                           );
                         },
                       ),
+                    if (_loadingList)
+                      Positioned.fill(
+                        child: Container(
+                          color: Colors.white.withOpacity(0.6),
+                          child: const Center(child: CircularProgressIndicator()),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -1372,12 +1560,13 @@ class _ApTransferGuideContentState extends State<ApTransferGuideContent> {
   }
 }
 
-class _HeaderSection extends StatelessWidget {
+class _ApHeaderSection extends StatelessWidget {
   final bool showMenuButton;
   final VoidCallback? onMenuTap;
   final String title;
+  final String? subtitle;
 
-  const _HeaderSection({required this.showMenuButton, this.onMenuTap, required this.title});
+  const _ApHeaderSection({required this.showMenuButton, this.onMenuTap, required this.title, this.subtitle});
 
   @override
   Widget build(BuildContext context) {
@@ -1401,7 +1590,16 @@ class _HeaderSection extends StatelessWidget {
           Icon(Icons.menu_rounded, color: t.outline),
         const SizedBox(width: 14),
         Expanded(
-          child: Text(title, style: TextStyle(color: t.primary, fontSize: 26, fontWeight: FontWeight.w700, fontFamily: 'Inter', letterSpacing: -0.3)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: TextStyle(color: t.textPrimary, fontSize: 26, fontWeight: FontWeight.w700, fontFamily: 'Inter', letterSpacing: -0.3)),
+              if (subtitle != null) ...[
+                const SizedBox(height: 4),
+                Text(subtitle!, style: TextStyle(color: t.textSecondary, fontSize: 14, fontFamily: 'Inter')),
+              ],
+            ],
+          ),
         ),
       ],
     );

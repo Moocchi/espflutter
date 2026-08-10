@@ -41,10 +41,10 @@ class _OutputPanelState extends State<OutputPanel> {
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: t.surface,
+        backgroundColor: t.surfaceContainerHigh,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(16),
           side: BorderSide(color: t.outlineVariant.withValues(alpha: 0.5)),
         ),
         title: Text(

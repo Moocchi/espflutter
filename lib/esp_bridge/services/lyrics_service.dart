@@ -40,11 +40,13 @@ class LyricsService {
       : '';
 
   bool get hasLyrics => _lines.isNotEmpty;
+  String? lastError;
 
   // ── Fetch & Parse ──────────────────────────────────────────────────────────
   /// Fetch synced lyrics from LRCLIB for the given [track] and [artist].
   /// Returns true if lyrics were found, false otherwise.
   Future<bool> fetchLyrics(String track, String artist, {int? durationMs}) async {
+    lastError = null;
     await _ensureStorageReady();
 
     _lines = [];
@@ -97,9 +99,40 @@ class LyricsService {
           );
         }
 
-        // ── Langkah 2: Search dengan query (artist + title) ──
+        // ── Langkah 2: Direct GET tanpa durasi ──
+        if (!found) {
+          found = await _fetchByGet(
+            track: track,
+            artist: cleanArtist,
+          );
+        }
+
+        // ── Langkah 3: Search dengan parameter terpisah (track_name & artist_name) ──
+        if (!found) {
+          found = await _fetchBySearch(track: track, artist: cleanArtist);
+        }
+
+        // ── Langkah 4: Search dengan query digabung '$cleanArtist $track' ──
         if (!found) {
           found = await _fetchByQ(query: '$cleanArtist $track');
+        }
+
+        // ── Langkah 5: Search dengan query digabung dibalik '$track $cleanArtist' ──
+        if (!found) {
+          found = await _fetchByQ(query: '$track $cleanArtist');
+        }
+
+        // ── Langkah 6: Search hanya judul lagu yang dibersihkan dari kurung/tag ──
+        if (!found) {
+          final cleanTrack = track.replaceAll(RegExp(r'\([^\)]*\)|\[[^\]]*\]'), '').split(' - ').first.trim();
+          if (cleanTrack.isNotEmpty) {
+            found = await _fetchBySearch(track: cleanTrack);
+            if (!found && cleanTrack != track) {
+              found = await _fetchByQ(query: cleanTrack);
+            }
+          } else {
+            found = await _fetchBySearch(track: track);
+          }
         }
 
         if (found) {
@@ -110,6 +143,7 @@ class LyricsService {
         // Jika sampai sini, berarti API jalan tapi lirik memang tidak ada di database.
         break;
       } catch (e) {
+        lastError = e.toString();
         maxRetries--;
         if (kDebugMode) print('[Lyrics] Network error, retry left: $maxRetries — $e');
         // Buat HTTP client baru agar DNS cache & koneksi basi di-flush

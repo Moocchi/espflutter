@@ -57,7 +57,7 @@ class GanciColors {
 
   static const Color error = Color(0xFFFF5B6A);
   static const Color warning = Color(0xFFFFB547);
-  static const Color success = Color(0xFF41EEC2);
+  static const Color success = Color(0xFF66D9A0);
 
   static const Color textPrimary = Color(0xFFE3E0F4);
   static const Color textSecondary = Color(0xFFC9C4D6);
@@ -121,7 +121,11 @@ class GanciTheme {
   Color get outlineVariant => isDark ? GanciColors.outlineVariant : GanciColors.lightOutlineVariant;
 
   static GanciTheme of(BuildContext context) {
-    final isDark = context.watch<ThemeProvider>().isDark;
+    // Gunakan read, bukan watch — agar widget yang memanggil GanciTheme.of()
+    // TIDAK terdaftar sebagai dependent ThemeProvider.
+    // Ini mencegah crash '_dependents.isEmpty: is not true' saat pindah halaman.
+    // Perubahan tema tetap berjalan karena MaterialApp di-rebuild oleh ThemeProvider.
+    final isDark = context.read<ThemeProvider>().isDark;
     return GanciTheme(isDark: isDark);
   }
 }
@@ -199,8 +203,8 @@ ThemeData _buildDarkTheme() {
       behavior: SnackBarBehavior.floating,
     ),
     dialogTheme: DialogThemeData(
-      backgroundColor: GanciColors.surfaceContainer,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: GanciColors.glassBorder)),
+      backgroundColor: GanciColors.surfaceContainerHigh,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: GanciColors.glassBorder)),
       titleTextStyle: const TextStyle(fontFamily: 'Inter', fontSize: 18, fontWeight: FontWeight.w600, color: GanciColors.textPrimary),
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
@@ -288,7 +292,7 @@ ThemeData _buildLightTheme() {
     ),
     dialogTheme: DialogThemeData(
       backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: Color(0xFFD4D1FF))),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Color(0xFFD4D1FF))),
       titleTextStyle: const TextStyle(fontFamily: 'Inter', fontSize: 18, fontWeight: FontWeight.w600, color: Color(0xFF1A1A2E)),
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(

@@ -26,6 +26,7 @@ enum _MenuTab {
   gifEditor,
   apTransferGuide,
   espBridge,
+  settings,
 }
 
 class _HomeScreenState extends State<HomeScreen> {
@@ -133,9 +134,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                             showMenuButton: !isDesktop,
                                             isDesktop: isDesktop,
                                           )
-                                    : ApTransferGuideContent(
-                                        showMenuButton: !isDesktop,
-                                      ),
+                                    : _selectedTab == _MenuTab.apTransferGuide
+                                        ? ApTransferGuideContent(
+                                            showMenuButton: !isDesktop,
+                                            onNavigateToSettings: () => _selectTab(_MenuTab.settings),
+                                          )
+                                        : _SettingsContent(
+                                            showMenuButton: !isDesktop,
+                                          ),
                           ),
                   ),
                 ],
@@ -160,7 +166,7 @@ class _HomeContent extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _HeaderSection(showMenuButton: showMenuButton, title: 'Ganci', subtitle: 'ESP32 Image Tools'),
+        _HomeHeaderSection(showMenuButton: showMenuButton, title: 'Ganci', subtitle: 'ESP32 Image Tools'),
         const SizedBox(height: 24),
         _buildDeviceStatusBanner(context),
         const SizedBox(height: 24),
@@ -250,7 +256,11 @@ class _HomeContent extends StatelessWidget {
                 ),
               ),
               TextButton(
-                onPressed: () => onNavigate(_MenuTab.espBridge),
+                onPressed: () {
+                  Future.delayed(Duration.zero, () {
+                    onNavigate(_MenuTab.settings);
+                  });
+                },
                 style: TextButton.styleFrom(
                   backgroundColor: t.surfaceContainerLow,
                   foregroundColor: t.primary,
@@ -270,122 +280,130 @@ class _HomeContent extends StatelessWidget {
 
   Widget _buildStatsGrid(BuildContext context) {
     final t = GanciTheme.of(context);
-    final appState = context.watch<AppState>();
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isWide = constraints.maxWidth >= 600;
-        final cardWidth = (isWide ? (constraints.maxWidth - 24) / 3 : (constraints.maxWidth - 12) / 2).floorToDouble();
-        return Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            Container(
-              width: cardWidth,
-              height: 110,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: t.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: t.outlineVariant.withOpacity(0.5)),
-                boxShadow: [
-                  BoxShadow(
-                    color: t.primary.withOpacity(0.03),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Images Converted', style: TextStyle(color: t.textSecondary, fontSize: 12, fontWeight: FontWeight.w500)),
-                      Icon(Icons.image_outlined, color: t.textMuted, size: 18),
-                    ],
-                  ),
-                  Text('${appState.imagesConvertedCount}', style: TextStyle(color: t.primary, fontSize: 24, fontWeight: FontWeight.w700, fontFamily: 'Inter')),
-                ],
-              ),
-            ),
-            Container(
-              width: cardWidth,
-              height: 110,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: t.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: t.outlineVariant.withOpacity(0.5)),
-                boxShadow: [
-                  BoxShadow(
-                    color: t.primary.withOpacity(0.03),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('GIFs Processed', style: TextStyle(color: t.textSecondary, fontSize: 12, fontWeight: FontWeight.w500)),
-                      Icon(Icons.gif_box_outlined, color: t.textMuted, size: 18),
-                    ],
-                  ),
-                  Text('${appState.gifsProcessedCount}', style: TextStyle(color: t.primary, fontSize: 24, fontWeight: FontWeight.w700, fontFamily: 'Inter')),
-                ],
-              ),
-            ),
-            Container(
-              width: isWide ? cardWidth : constraints.maxWidth,
-              height: 110,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: t.primaryContainer,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: t.primary.withOpacity(0.15),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Files Synced', style: TextStyle(color: Color(0xE6FFFFFF), fontSize: 12, fontWeight: FontWeight.w500)),
-                      const Icon(Icons.sync, color: Colors.white, size: 18),
-                    ],
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text('${appState.filesSyncedCount}', style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w700, fontFamily: 'Inter')),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Text('Total', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w600)),
+    return Consumer<AppState>(
+      builder: (context, appState, _) {
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            // Clamp agar cardWidth tidak pernah negatif saat constraints.maxWidth == 0
+            final isWide = constraints.maxWidth >= 600;
+            final rawWidth = isWide
+                ? (constraints.maxWidth - 24) / 3
+                : (constraints.maxWidth - 12) / 2;
+            final cardWidth = rawWidth.clamp(0.0, double.infinity).floorToDouble();
+
+            return Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                Container(
+                  width: cardWidth,
+                  height: 110,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: t.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: t.outlineVariant.withOpacity(0.5)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: t.primary.withOpacity(0.03),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
                       ),
                     ],
                   ),
-                ],
-              ),
-            ),
-          ],
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Images Converted', style: TextStyle(color: t.textSecondary, fontSize: 12, fontWeight: FontWeight.w500)),
+                          Icon(Icons.image_outlined, color: t.textMuted, size: 18),
+                        ],
+                      ),
+                      Text('${appState.imagesConvertedCount}', style: TextStyle(color: t.primary, fontSize: 24, fontWeight: FontWeight.w700, fontFamily: 'Inter')),
+                    ],
+                  ),
+                ),
+                Container(
+                  width: cardWidth,
+                  height: 110,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: t.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: t.outlineVariant.withOpacity(0.5)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: t.primary.withOpacity(0.03),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('GIFs Processed', style: TextStyle(color: t.textSecondary, fontSize: 12, fontWeight: FontWeight.w500)),
+                          Icon(Icons.gif_box_outlined, color: t.textMuted, size: 18),
+                        ],
+                      ),
+                      Text('${appState.gifsProcessedCount}', style: TextStyle(color: t.primary, fontSize: 24, fontWeight: FontWeight.w700, fontFamily: 'Inter')),
+                    ],
+                  ),
+                ),
+                Container(
+                  width: isWide ? cardWidth : constraints.maxWidth.clamp(0.0, double.infinity),
+                  height: 110,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: t.primaryContainer,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: t.primary.withOpacity(0.15),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Files Synced', style: TextStyle(color: Color(0xE6FFFFFF), fontSize: 12, fontWeight: FontWeight.w500)),
+                          const Icon(Icons.sync, color: Colors.white, size: 18),
+                        ],
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text('${appState.filesSyncedCount}', style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w700, fontFamily: 'Inter')),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Text('Total', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w600)),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -409,9 +427,9 @@ class _HomeContent extends StatelessWidget {
         _MenuTab.gifEditor,
       ),
       _FeatureItem(
-        Icons.settings_input_antenna_rounded,
-        'AP Transfer',
-        'Direct Wi-Fi file upload',
+        Icons.bluetooth_connected_rounded,
+        'Transfer',
+        'Direct file upload via BLE',
         t.primary,
         _MenuTab.apTransferGuide,
       ),
@@ -426,8 +444,8 @@ class _HomeContent extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= 768;
-        final crossAxisCount = 2;
-        final cardWidth = ((constraints.maxWidth - (crossAxisCount - 1) * 12) / crossAxisCount).floorToDouble();
+        const crossAxisCount = 2;
+        final cardWidth = ((constraints.maxWidth - (crossAxisCount - 1) * 12) / crossAxisCount).clamp(0.0, double.infinity).floorToDouble();
 
         return Wrap(
           spacing: 12,
@@ -438,7 +456,11 @@ class _HomeContent extends StatelessWidget {
               color: Colors.transparent,
               borderRadius: BorderRadius.circular(16),
               child: InkWell(
-                onTap: () => onNavigate(item.tab),
+                onTap: () {
+                  Future.delayed(Duration.zero, () {
+                    onNavigate(item.tab);
+                  });
+                },
                 borderRadius: BorderRadius.circular(16),
                 child: Container(
                   padding: const EdgeInsets.all(16),
@@ -533,9 +555,16 @@ class _ConverterContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
-    final hasFiles = state.loadedFiles.isNotEmpty;
-    final t = GanciTheme.of(context);
+    return Consumer<AppState>(
+      builder: (context, state, _) {
+        final hasFiles = state.loadedFiles.isNotEmpty;
+        final t = GanciTheme.of(context);
+        return _buildContent(context, state, hasFiles, t);
+      },
+    );
+  }
+
+  Widget _buildContent(BuildContext context, AppState state, bool hasFiles, GanciTheme t) {
 
     final sourceFilesCard = _BentoCard(
       icon: Container(
@@ -629,10 +658,10 @@ class _ConverterContent extends StatelessWidget {
       ),
     ];
 
-    return Column(
+        return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _HeaderSection(
+        _HomeHeaderSection(
           showMenuButton: showMenuButton,
           title: 'Image Converter',
           subtitle: 'Convert and optimize images for ESP32 displays',
@@ -682,10 +711,10 @@ class _GifEditorContent extends StatelessWidget {
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: t.surface,
+        backgroundColor: t.surfaceContainerHigh,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(16),
           side: BorderSide(color: t.outlineVariant.withValues(alpha: 0.5)),
         ),
         title: Text(
@@ -751,11 +780,18 @@ class _GifEditorContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
-    final settings = state.gifEditorSettings;
-    final gif = state.gifEditorFile;
-    final hasGif = gif != null && gif.frames.isNotEmpty;
-    final t = GanciTheme.of(context);
+    return Consumer<AppState>(
+      builder: (context, state, _) {
+        final settings = state.gifEditorSettings;
+        final gif = state.gifEditorFile;
+        final hasGif = gif != null && gif.frames.isNotEmpty;
+        final t = GanciTheme.of(context);
+        return _buildContent(context, state, settings, gif, hasGif, t);
+      },
+    );
+  }
+
+  Widget _buildContent(BuildContext context, AppState state, GifEditorSettings settings, LoadedFile? gif, bool hasGif, GanciTheme t) {
 
     final sourceAnimationCard = _BentoCard(
       icon: Container(
@@ -817,7 +853,7 @@ class _GifEditorContent extends StatelessWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      '${gif.name} • ${gif.frames.length} frames',
+                      '${gif!.name} • ${gif.frames.length} frames',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -990,7 +1026,7 @@ class _GifEditorContent extends StatelessWidget {
         Expanded(
           child: ElevatedButton.icon(
             onPressed: (!hasGif || state.isGifEditorProcessing) ? null : () async {
-              final baseName = gif.name.contains('.') ? gif.name.substring(0, gif.name.lastIndexOf('.')) : gif.name;
+              final baseName = gif!.name.contains('.') ? gif.name.substring(0, gif.name.lastIndexOf('.')) : gif.name;
               final customName = await _showRenameDialog(context, '${baseName}_optimized', t);
               if (customName == null) return;
               final result = await state.saveOptimizedGif(customName: customName.isEmpty ? null : customName);
@@ -1027,7 +1063,7 @@ class _GifEditorContent extends StatelessWidget {
           if (hasGif)
             Container(
               child: PreviewWidget(
-                frames: gif.frames.map((f) => f.sourceImage).toList(growable: false),
+                frames: gif!.frames.map((f) => f.sourceImage).toList(growable: false),
                 isGif: true,
               ),
             )
@@ -1064,7 +1100,7 @@ class _GifEditorContent extends StatelessWidget {
                 const SizedBox(height: 16),
                 _buildStatRow(t, Icons.sd_storage_outlined, 'File Size', hasGif ? '${state.gifEditorEstimatedFileSizeKb} KB' : '-- KB'),
                 Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Divider(color: t.outlineVariant.withValues(alpha: 0.2), height: 1)),
-                _buildStatRow(t, Icons.animation_rounded, 'Frames', hasGif ? '${gif.frames.length}' : '--'),
+                _buildStatRow(t, Icons.animation_rounded, 'Frames', hasGif ? '${gif!.frames.length}' : '--'),
                 Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Divider(color: t.outlineVariant.withValues(alpha: 0.2), height: 1)),
                 _buildStatRow(t, Icons.speed_rounded, 'Framerate', hasGif ? '15 FPS' : '-- FPS'),
                 Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Divider(color: t.outlineVariant.withValues(alpha: 0.2), height: 1)),
@@ -1082,7 +1118,7 @@ class _GifEditorContent extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _HeaderSection(
+        _HomeHeaderSection(
           showMenuButton: showMenuButton,
           title: 'Gif Editor',
           subtitle: 'Optimize and prepare animations for ESP32 display',
@@ -1156,12 +1192,57 @@ class _EspBridgeContent extends StatelessWidget {
   }
 }
 
-class _HeaderSection extends StatelessWidget {
+class _SettingsContent extends StatelessWidget {
+  final bool showMenuButton;
+
+  const _SettingsContent({required this.showMenuButton});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = GanciTheme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            if (showMenuButton)
+              Container(
+                margin: const EdgeInsets.only(right: 12),
+                decoration: BoxDecoration(
+                  color: t.surfaceContainer,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: t.glassBorder),
+                ),
+                child: IconButton(
+                  onPressed: () => Scaffold.of(context).openDrawer(),
+                  icon: const Icon(Icons.menu_rounded),
+                  color: t.textSecondary,
+                ),
+              ),
+            Text('Settings', style: TextStyle(color: t.textPrimary, fontSize: 24, fontWeight: FontWeight.bold, fontFamily: 'Inter')),
+          ],
+        ),
+        const SizedBox(height: 24),
+        _BentoCard(
+          icon: Container(
+            width: 40, height: 40,
+            decoration: BoxDecoration(color: t.surfaceContainerLow, borderRadius: BorderRadius.circular(8)),
+            child: Icon(Icons.bluetooth_rounded, color: t.primary),
+          ),
+          title: 'ESP32 Bluetooth Bridge',
+          child: const SettingsPanel(showBluetooth: true, showImageSettings: false),
+        ),
+      ],
+    );
+  }
+}
+
+class _HomeHeaderSection extends StatelessWidget {
   final bool showMenuButton;
   final String title;
   final String subtitle;
 
-  const _HeaderSection({required this.showMenuButton, required this.title, required this.subtitle});
+  const _HomeHeaderSection({required this.showMenuButton, required this.title, required this.subtitle});
 
   @override
   Widget build(BuildContext context) {
@@ -1218,11 +1299,7 @@ class _SidebarMenu extends StatelessWidget {
       if (hasDrawer) {
         onBeforeSelect?.call(tab);
         Navigator.of(context).pop();
-        Future.delayed(const Duration(milliseconds: 230), () {
-          if (context.mounted) {
-            onSelected(tab);
-          }
-        });
+        onSelected(tab);
         return;
       }
       onSelected(tab);
@@ -1278,7 +1355,7 @@ class _SidebarMenu extends StatelessWidget {
           const SizedBox(height: 4),
           _NavTile(icon: Icons.gif_box_rounded, label: 'GIF Editor', isActive: selectedTab == _MenuTab.gifEditor, onTap: () => handleSelect(_MenuTab.gifEditor)),
           const SizedBox(height: 4),
-          _NavTile(icon: Icons.wifi_tethering_rounded, label: 'AP Transfer', isActive: selectedTab == _MenuTab.apTransferGuide, onTap: () => handleSelect(_MenuTab.apTransferGuide)),
+          _NavTile(icon: Icons.bluetooth_connected_rounded, label: 'Transfer', isActive: selectedTab == _MenuTab.apTransferGuide, onTap: () => handleSelect(_MenuTab.apTransferGuide)),
           const SizedBox(height: 4),
           _NavTile(icon: Icons.sensors_rounded, label: 'ESP Bridge', isActive: selectedTab == _MenuTab.espBridge, onTap: () => handleSelect(_MenuTab.espBridge)),
           const Spacer(),
@@ -1287,7 +1364,7 @@ class _SidebarMenu extends StatelessWidget {
             child: Text('TOOLS', style: TextStyle(color: t.textMuted.withValues(alpha: 0.7), fontWeight: FontWeight.w700, fontSize: 11, fontFamily: 'Inter', letterSpacing: 1.5)),
           ),
           const SizedBox(height: 12),
-          _NavTile(icon: Icons.settings_rounded, label: 'Settings', isActive: false, onTap: () {}),
+          _NavTile(icon: Icons.settings_rounded, label: 'Settings', isActive: selectedTab == _MenuTab.settings, onTap: () => handleSelect(_MenuTab.settings)),
           _NavTile(icon: Icons.info_outline_rounded, label: 'About', isActive: false, onTap: () {}),
           const SizedBox(height: 24),
         ],
@@ -1324,7 +1401,11 @@ class _NavTile extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
-          onTap: onTap,
+          onTap: () {
+            Future.delayed(Duration.zero, () {
+              onTap();
+            });
+          },
           splashColor: t.primary.withValues(alpha: 0.1),
           highlightColor: t.primary.withValues(alpha: 0.05),
           child: AnimatedContainer(

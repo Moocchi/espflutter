@@ -41,6 +41,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _bleStatus = _ble.currentStatus; // Pick up current state immediately!
     _listenBle();
     _checkPermission();
   }
@@ -93,10 +94,14 @@ class _PlayerScreenState extends State<PlayerScreen>
               )
             : null,
         title: Text('Media Bridge', style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.bold, fontFamily: 'Inter')),
-        actions: [_buildConnectionBadge(t), const SizedBox(width: 8)],
+        actions: [
+          _buildConnectionBadge(t),
+          const SizedBox(width: 8),
+        ],
       ),
       body: StreamBuilder<MediaInfo>(
         stream: _mediaBridge.mediaStream,
+        initialData: _mediaBridge.currentInfo, // Fix missing info on load
         builder: (context, snapshot) {
           final info = snapshot.data;
           if (!_hasPermission) return _buildPermissionPrompt(t);
@@ -124,7 +129,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     IconData icon = Icons.bluetooth_disabled_rounded;
 
     if (_bleStatus == BleStatus.connected) {
-      statusColor = GanciColors.secondary;
+      statusColor = t.primary;
       statusText = 'Connected';
       icon = Icons.bluetooth_connected_rounded;
     } else if (_bleStatus == BleStatus.connecting || _bleStatus == BleStatus.scanning) {
@@ -133,14 +138,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       icon = Icons.bluetooth_searching_rounded;
     }
 
-    return ActionChip(
-      onPressed: () {
-        if (_bleStatus == BleStatus.connected) {
-          _ble.disconnect();
-        } else {
-          Navigator.push(context, MaterialPageRoute(builder: (_) => const DeviceScanScreen()));
-        }
-      },
+    return Chip(
       avatar: Icon(icon, color: statusColor, size: 16),
       label: Text(statusText, style: TextStyle(color: statusColor, fontSize: 12, fontFamily: 'Inter')),
       backgroundColor: t.surfaceContainer,
